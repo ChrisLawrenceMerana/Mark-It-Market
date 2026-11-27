@@ -1,0 +1,235 @@
+date,group,commodity,unit,low,high,prevailing,average,source_file
+2021-10-04,Imported Commercial Rice,Special,PHP/kg,,,50,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Imported Commercial Rice,Premium,PHP/kg,,,48,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Imported Commercial Rice,Well Milled,PHP/kg,,,43,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Imported Commercial Rice,Regular Milled,PHP/kg,,,,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Livestock And Poultry Products,Beef Rump,PHP/kg,,,400,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Livestock And Poultry Products,Beef Brisket,PHP/kg,,,340,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Livestock And Poultry Products,Pork Ham,PHP/kg,,,280,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Livestock And Poultry Products,Pork Belly,PHP/kg,,,340,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Livestock And Poultry Products,Whole Chicken,PHP/kg,,,160,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Livestock And Poultry Products,Chicken Egg (Medium),PHP/piece,,,6.5,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Local Commercial Rice,Special,PHP/kg,,,50,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Local Commercial Rice,Premium,PHP/kg,,,45,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Local Commercial Rice,Well Milled,PHP/kg,,,40,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Local Commercial Rice,Regular Milled,PHP/kg,,,38,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Highland Vegetables,Cabbage Repolyo (Scorpio),PHP/kg,,,130,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Highland Vegetables,Carrot (Karot),PHP/kg,,,100,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Highland Vegetables,Baguio Beans (Habitchuelas),PHP/kg,,,80,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Highland Vegetables,White Potato (Patatas),PHP/kg,,,80,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Highland Vegetables,Pechay Baguio,PHP/kg,,,80,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Highland Vegetables,Chayote (Sayote),PHP/kg,,,40,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Fish,Milkfish (Bangus),PHP/kg,,,160,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Fish,Tilapia,PHP/kg,,,120,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Fish,Local Round Scad (Galunggong),PHP/kg,,,240,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Fish,Imported Round Scad (Galunggong),PHP/kg,,,240,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Fish,Alumahan,PHP/kg,,,240,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Lowland Vegetables,Bittergourd (Ampalaya),PHP/kg,,,120,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Lowland Vegetables,String Beans (Sitao),PHP/kg,,,80,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Lowland Vegetables,Pechay Tagalog,PHP/kg,,,70,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Lowland Vegetables,Squash (Kalabasa),PHP/kg,,,50,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Lowland Vegetables,Eggplant (Talong),PHP/kg,,,90,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Lowland Vegetables,Tomato (Kamatis),PHP/kg,,,50,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Fruits,Calamansi,PHP/kg,,,50,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Fruits,Banana (Lakatan),PHP/kg,,,80,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Fruits,Banana (Latundan),PHP/kg,,,60,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Fruits,Papaya,PHP/kg,,,60,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Fruits,Mango (Carabao),PHP/kg,,,180,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Spices,Local Red Onion (Pulang Sibuyas),PHP/kg,,,140,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Spices,Imported Red Onion,PHP/kg,,,80,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Spices,Local White Onion (Puting Sibuyas),PHP/kg,,,,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Spices,Imported White Onion,PHP/kg,,,80,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Other Commodities,Sugar (Refined),PHP/kg,,,50,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Other Commodities,Sugar (Washed),PHP/kg,,,45,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Other Commodities,Sugar (Brown),PHP/kg,,,46,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Other Commodities,Palm Oil - 350ml,PHP/bottle,,,35,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Other Commodities,Palm Oil - 1L,PHP/bottle,,,80,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Other Commodities,Coconut Oil - 350ml,PHP/bottle,,,35,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Other Commodities,Coconut Oil - 1L,PHP/bottle,,,90,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Spices,Imported Garlic (Bawang),PHP/kg,,,120,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Spices,Local Garlic (Bawang),PHP/kg,,,280,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Spices,Ginger (Luya),PHP/kg,,,150,,Price-Monitoring-October-4-2021.csv
+2021-10-04,Spices,Chili (Siling labuyo),PHP/kg,,,400,,Price-Monitoring-October-4-2021.csv
+2021-10-05,Imported Commercial Rice,Special,PHP/kg,,,50,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Imported Commercial Rice,Premium,PHP/kg,,,46.5,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Imported Commercial Rice,Well Milled,PHP/kg,,,43,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Imported Commercial Rice,Regular Milled,PHP/kg,,,,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Livestock And Poultry Products,Beef Rump,PHP/kg,,,400,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Livestock And Poultry Products,Beef Brisket,PHP/kg,,,340,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Livestock And Poultry Products,Pork Ham,PHP/kg,,,280,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Livestock And Poultry Products,Pork Belly,PHP/kg,,,340,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Livestock And Poultry Products,Whole Chicken,PHP/kg,,,160,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Livestock And Poultry Products,Chicken Egg (Medium),PHP/piece,,,6.5,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Local Commercial Rice,Special,PHP/kg,,,50,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Local Commercial Rice,Premium,PHP/kg,,,45,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Local Commercial Rice,Well Milled,PHP/kg,,,40,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Local Commercial Rice,Regular Milled,PHP/kg,,,38,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Highland Vegetables,Cabbage Repolyo (Scorpio),PHP/kg,,,120,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Highland Vegetables,Carrot (Karot),PHP/kg,,,100,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Highland Vegetables,Baguio Beans (Habitchuelas),PHP/kg,,,80,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Highland Vegetables,White Potato (Patatas),PHP/kg,,,80,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Highland Vegetables,Pechay Baguio,PHP/kg,,,80,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Highland Vegetables,Chayote (Sayote),PHP/kg,,,40,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Fish,Milkfish (Bangus),PHP/kg,,,160,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Fish,Tilapia,PHP/kg,,,120,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Fish,Local Round Scad (Galunggong),PHP/kg,,,240,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Fish,Imported Round Scad (Galunggong),PHP/kg,,,200,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Fish,Alumahan,PHP/kg,,,260,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Lowland Vegetables,Bittergourd (Ampalaya),PHP/kg,,,120,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Lowland Vegetables,String Beans (Sitao),PHP/kg,,,80,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Lowland Vegetables,Pechay Tagalog,PHP/kg,,,60,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Lowland Vegetables,Squash (Kalabasa),PHP/kg,,,50,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Lowland Vegetables,Eggplant (Talong),PHP/kg,,,100,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Lowland Vegetables,Tomato (Kamatis),PHP/kg,,,50,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Fruits,Calamansi,PHP/kg,,,50,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Fruits,Banana (Lakatan),PHP/kg,,,80,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Fruits,Banana (Latundan),PHP/kg,,,60,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Fruits,Papaya,PHP/kg,,,60,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Fruits,Mango (Carabao),PHP/kg,,,180,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Spices,Local Red Onion (Pulang Sibuyas),PHP/kg,,,140,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Spices,Imported Red Onion,PHP/kg,,,80,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Spices,Local White Onion (Puting Sibuyas),PHP/kg,,,,,Price-Monitoring-October-5-2021.csv
+2021-10-05,Spices,Imported White Onion,PHP/kg,,,80,,Price-Monitoring-October-5-2021.csv
+2021-10-06,Imported Commercial Rice,Special,PHP/kg,,,50,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Imported Commercial Rice,Premium,PHP/kg,,,45,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Imported Commercial Rice,Well Milled,PHP/kg,,,43,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Imported Commercial Rice,Regular Milled,PHP/kg,,,,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Livestock And Poultry Products,Beef Rump,PHP/kg,,,400,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Livestock And Poultry Products,Beef Brisket,PHP/kg,,,345,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Livestock And Poultry Products,Pork Ham,PHP/kg,,,280,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Livestock And Poultry Products,Pork Belly,PHP/kg,,,340,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Livestock And Poultry Products,Whole Chicken,PHP/kg,,,160,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Livestock And Poultry Products,Chicken Egg (Medium),PHP/piece,,,6.5,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Local Commercial Rice,Special,PHP/kg,,,50,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Local Commercial Rice,Premium,PHP/kg,,,45,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Local Commercial Rice,Well Milled,PHP/kg,,,40,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Local Commercial Rice,Regular Milled,PHP/kg,,,38,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Highland Vegetables,Cabbage Repolyo (Scorpio),PHP/kg,,,120,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Highland Vegetables,Carrot (Karot),PHP/kg,,,100,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Highland Vegetables,Baguio Beans (Habitchuelas),PHP/kg,,,80,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Highland Vegetables,White Potato (Patatas),PHP/kg,,,80,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Highland Vegetables,Pechay Baguio,PHP/kg,,,80,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Highland Vegetables,Chayote (Sayote),PHP/kg,,,40,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Fish,Milkfish (Bangus),PHP/kg,,,160,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Fish,Tilapia,PHP/kg,,,120,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Fish,Local Round Scad (Galunggong),PHP/kg,,,240,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Fish,Imported Round Scad (Galunggong),PHP/kg,,,200,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Fish,Alumahan,PHP/kg,,,280,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Lowland Vegetables,Bittergourd (Ampalaya),PHP/kg,,,100,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Lowland Vegetables,String Beans (Sitao),PHP/kg,,,80,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Lowland Vegetables,Pechay Tagalog,PHP/kg,,,60,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Lowland Vegetables,Squash (Kalabasa),PHP/kg,,,50,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Lowland Vegetables,Eggplant (Talong),PHP/kg,,,100,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Lowland Vegetables,Tomato (Kamatis),PHP/kg,,,50,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Fruits,Calamansi,PHP/kg,,,50,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Fruits,Banana (Lakatan),PHP/kg,,,80,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Fruits,Banana (Latundan),PHP/kg,,,60,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Fruits,Papaya,PHP/kg,,,60,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Fruits,Mango (Carabao),PHP/kg,,,190,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Spices,Local Red Onion (Pulang Sibuyas),PHP/kg,,,140,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Spices,Imported Red Onion,PHP/kg,,,80,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Spices,Local White Onion (Puting Sibuyas),PHP/kg,,,,,Price-Monitoring-October-6-2021.csv
+2021-10-06,Spices,Imported White Onion,PHP/kg,,,80,,Price-Monitoring-October-6-2021.csv
+2021-10-11,Imported Commercial Rice,Special,PHP/kg,,,50,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Imported Commercial Rice,Premium,PHP/kg,,,48,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Imported Commercial Rice,Well Milled,PHP/kg,,,43,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Imported Commercial Rice,Regular Milled,PHP/kg,,,,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Livestock And Poultry Products,Beef Rump,PHP/kg,,,400,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Livestock And Poultry Products,Beef Brisket,PHP/kg,,,340,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Livestock And Poultry Products,Pork Ham,PHP/kg,,,280,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Livestock And Poultry Products,Pork Belly,PHP/kg,,,340,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Livestock And Poultry Products,Whole Chicken,PHP/kg,,,155,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Livestock And Poultry Products,Chicken Egg (Medium),PHP/piece,,,6.5,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Local Commercial Rice,Special,PHP/kg,,,50,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Local Commercial Rice,Premium,PHP/kg,,,45,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Local Commercial Rice,Well Milled,PHP/kg,,,40,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Local Commercial Rice,Regular Milled,PHP/kg,,,38,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Highland Vegetables,Cabbage Repolyo (Scorpio),PHP/kg,,,100,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Highland Vegetables,Carrot (Karot),PHP/kg,,,100,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Highland Vegetables,Baguio Beans (Habitchuelas),PHP/kg,,,100,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Highland Vegetables,White Potato (Patatas),PHP/kg,,,80,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Highland Vegetables,Pechay Baguio,PHP/kg,,,80,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Highland Vegetables,Chayote (Sayote),PHP/kg,,,40,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Fish,Milkfish (Bangus),PHP/kg,,,160,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Fish,Tilapia,PHP/kg,,,120,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Fish,Local Round Scad (Galunggong),PHP/kg,,,240,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Fish,Imported Round Scad (Galunggong),PHP/kg,,,200,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Fish,Alumahan,PHP/kg,,,220,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Lowland Vegetables,Bittergourd (Ampalaya),PHP/kg,,,100,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Lowland Vegetables,String Beans (Sitao),PHP/kg,,,80,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Lowland Vegetables,Pechay Tagalog,PHP/kg,,,60,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Lowland Vegetables,Squash (Kalabasa),PHP/kg,,,50,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Lowland Vegetables,Eggplant (Talong),PHP/kg,,,80,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Lowland Vegetables,Tomato (Kamatis),PHP/kg,,,50,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Fruits,Calamansi,PHP/kg,,,60,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Fruits,Banana (Lakatan),PHP/kg,,,70,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Fruits,Banana (Latundan),PHP/kg,,,70,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Fruits,Papaya,PHP/kg,,,60,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Fruits,Mango (Carabao),PHP/kg,,,175,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Spices,Local Red Onion (Pulang Sibuyas),PHP/kg,,,140,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Spices,Imported Red Onion,PHP/kg,,,80,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Spices,Local White Onion (Puting Sibuyas),PHP/kg,,,100,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Spices,Imported White Onion,PHP/kg,,,100,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Other Commodities,Sugar (Refined),PHP/kg,,,50,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Other Commodities,Sugar (Washed),PHP/kg,,,45,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Other Commodities,Sugar (Brown),PHP/kg,,,45,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Other Commodities,Palm Oil - 350ml,PHP/bottle,,,35,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Other Commodities,Palm Oil - 1L,PHP/bottle,,,80,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Other Commodities,Coconut Oil - 350ml,PHP/bottle,,,35,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Other Commodities,Coconut Oil - 1L,PHP/bottle,,,90,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Spices,Imported Garlic (Bawang),PHP/kg,,,120,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Spices,Local Garlic (Bawang),PHP/kg,,,280,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Spices,Ginger (Luya),PHP/kg,,,160,,Price-Monitoring-October-11-2021.csv
+2021-10-11,Spices,Chili (Siling labuyo),PHP/kg,,,400,,Price-Monitoring-October-11-2021.csv
+2021-12-23,Imported Commercial Rice,Special,PHP/kg,,,50,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Imported Commercial Rice,Premium,PHP/kg,,,45,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Imported Commercial Rice,Well Milled,PHP/kg,,,39,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Imported Commercial Rice,Regular Milled,PHP/kg,,,37,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Livestock And Poultry Products,Beef Rump,PHP/kg,,,420,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Livestock And Poultry Products,Beef Brisket,PHP/kg,,,350,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Livestock And Poultry Products,Pork Ham,PHP/kg,,,320,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Livestock And Poultry Products,Pork Belly,PHP/kg,,,360,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Livestock And Poultry Products,Whole Chicken,PHP/kg,,,160,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Livestock And Poultry Products,Chicken Egg (Medium),PHP/piece,,,6,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Local Commercial Rice,Special,PHP/kg,,,50,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Local Commercial Rice,Premium,PHP/kg,,,45,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Local Commercial Rice,Well Milled,PHP/kg,,,40,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Local Commercial Rice,Regular Milled,PHP/kg,,,38,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Highland Vegetables,Cabbage Repolyo (Scorpio),PHP/kg,,,80,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Highland Vegetables,Carrot (Karot),PHP/kg,,,90,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Highland Vegetables,Baguio Beans (Habitchuelas),PHP/kg,,,80,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Highland Vegetables,White Potato (Patatas),PHP/kg,,,80,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Highland Vegetables,Pechay Baguio,PHP/kg,,,60,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Highland Vegetables,Chayote (Sayote),PHP/kg,,,50,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Fish,Milkfish (Bangus),PHP/kg,,,160,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Fish,Tilapia,PHP/kg,,,120,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Fish,Local Round Scad (Galunggong),PHP/kg,,,240,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Fish,Imported Round Scad (Galunggong),PHP/kg,,,200,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Fish,Alumahan,PHP/kg,,,300,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Lowland Vegetables,Bittergourd (Ampalaya),PHP/kg,,,80,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Lowland Vegetables,String Beans (Sitao),PHP/kg,,,100,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Lowland Vegetables,Pechay Tagalog,PHP/kg,,,70,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Lowland Vegetables,Squash (Kalabasa),PHP/kg,,,30,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Lowland Vegetables,Eggplant (Talong),PHP/kg,,,100,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Lowland Vegetables,Tomato (Kamatis),PHP/kg,,,60,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Fruits,Calamansi,PHP/kg,,,80,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Fruits,Banana (Lakatan),PHP/kg,,,70,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Fruits,Banana (Latundan),PHP/kg,,,70,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Fruits,Papaya,PHP/kg,,,60,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Fruits,Mango (Carabao),PHP/kg,,,180,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Spices,Local Red Onion (Pulang Sibuyas),PHP/kg,,,180,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Spices,Imported Red Onion,PHP/kg,,,180,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Spices,Local White Onion (Puting Sibuyas),PHP/kg,,,,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Spices,Imported White Onion,PHP/kg,,,80,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Other Commodities,Sugar (Refined),PHP/kg,,,55,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Other Commodities,Sugar (Washed),PHP/kg,,,45.5,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Other Commodities,Sugar (Brown),PHP/kg,,,45,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Other Commodities,Palm Oil - 350ml,PHP/bottle,,,35,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Other Commodities,Palm Oil - 1L,PHP/bottle,,,90,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Other Commodities
+,Coconut Oil - 350ml,PHP/bottle,,,35,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Other Commodities,Coconut Oil - 1L,PHP/bottle,,,100,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Spices,Imported Garlic (Bawang),PHP/kg,,,120,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Spices,Local Garlic (Bawang),PHP/kg,,,300,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Spices,Ginger (Luya),PHP/kg,,,150,,Price-Monitoring-December-23-2021.csv
+2021-12-23,Spices,Chili (Siling labuyo),PHP/kg,,,150,,Price-Monitoring-December-23-2021.csv
