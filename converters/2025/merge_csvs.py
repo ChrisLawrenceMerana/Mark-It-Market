@@ -18,8 +18,9 @@ tidy format automatically.
 
 Rows are sorted by date and exact duplicate rows are removed. Rows whose market or
 commodity name is garbled (typical of scanned PDFs with a bad OCR text layer) are
-dropped, with a warning. A blank date is filled in from the file name
-(e.g. Price-Monitoring-April-1-2025.csv).
+dropped, with a warning. A blank date is filled
+in from the file name (e.g. Price-Monitoring-April-1-2025.csv), and a warning is
+printed for any date that comes from more than one file.
 """
 import argparse
 import csv
@@ -249,6 +250,22 @@ def main():
                   file=sys.stderr)
             continue
         d["rows"].sort(key=lambda x: (x[0], x[-1]))
+        blank = sum(1 for r in d["rows"] if not r[0])
+        if blank:
+            print(f"WARNING: {blank} {kind} rows have no date (none in the file and "
+                  f"none in the file name).", file=sys.stderr)
+        files_by_date = {}
+        for r in d["rows"]:
+            if r[0]:
+                files_by_date.setdefault(r[0], set()).add(r[-1])
+        multi = {k: v for k, v in files_by_date.items() if len(v) > 1}
+        if multi:
+            print(f"WARNING: {len(multi)} date(s) in the {kind} data come from more than one "
+                  f"file, so their rows are duplicated:", file=sys.stderr)
+            for k in sorted(multi)[:10]:
+                print(f"    {k}: {', '.join(sorted(multi[k]))}", file=sys.stderr)
+            if len(multi) > 10:
+                print(f"    ... and {len(multi) - 10} more", file=sys.stderr)
         out = Path(args.outdir) / OUTPUTS[kind]
         with open(out, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f)
