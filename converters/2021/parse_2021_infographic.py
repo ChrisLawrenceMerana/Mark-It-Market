@@ -215,3 +215,75 @@ def date_from_name(name):
     return date(int(m.group(3)), MONTHS[m.group(1).lower()], int(m.group(2)))
 
 
+def main(folder=".", extras=()):
+    by_date = {}
+    for p in sorted(Path(folder).glob("*.pdf")):
+        d = date_from_name(p.name)
+        if d and (d not in by_date or "revised" in p.name.lower()):
+            by_date[d] = p
+
+    rows, failed, results = [], [], {}
+    files, layouts = {}, {}
+    for d, p in sorted(by_date.items()):
+        try:
+            with pdfplumber.open(p) as pdf:
+                page = pdf.pages[0]
+                if re.search(r"High\s+Low\s+Prevailing", page.extract_text() or ""):
+                    continue            # tabled months are handled by parse_2021.py
+                src, layout, res, why = read_page(page)
+        except Exception as e:  # noqa: BLE001
+            failed.append(f"{p.name}: could not read ({e})")
+            print(f"[x] {p.name}")
+            continue
+        if layout is None:
+            failed.append(f"{p.name}: {why}")
+            print(f"[x] {p.name}: {why}")
+            continue
+        results[d] = res
+        files[d], layouts[d] = p.name, (layout, src)
+        for g, n, u, today, _ in res:
+            rows.append({"date": d.isoformat(), "group": g, "commodity": n, "unit": u, "low": "", "high": "",
+                         "prevailing": "" if today is None else today, "average": "",
+                         "source_file": p.stem + ".csv"})
+        print(f"[ok] {p.name} ({layout}, {src})")
+
+    # consistency check: today's value on day D vs the "yesterday" printed on the next file (matched by name)
+    mism = []
+    ds = sorted(results)
+    for a, b in zip(ds, ds[1:]):
+        if (b - a).days > 4:
+            continue
+        today_a = {(g, n): t for g, n, u, t, y in results[a]}
+        for g, n, u, t_b, y_b in results[b]:
+            if (g, n) in today_a and today_a[(g, n)] != y_b:
+                mism.append(f"{a} today={today_a[(g, n)]} vs {b} yesterday={y_b}: {n}   [{files[a]} / {files[b]}]")
+
+    for path in extras:                       # hand-entered days (image-only pages), same columns
+        with open(path, newline="", encoding="utf-8") as f:
+            rows.extend(csv.DictReader(f))
+    seen, final = set(), []
+    for r in sorted(rows, key=lambda r: (r["date"], r["group"], r["commodity"])):
+        key = (r["date"], r["group"], r["commodity"])
+        if key not in seen:
+            seen.add(key)
+            final.append(r)
+    with open("ncr_summary_2021_sepdec_official.csv", "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=FIELDS)
+        w.writeheader()
+        w.writerows(final)
+    from collections import Counter
+    kinds = Counter(f"{lay}/{src}" for lay, src in layouts.values())
+    lines = [f"Read {len(results)} infographic pages ({len(rows)} rows); {len(failed)} could not be read.",
+             "Layouts read: " + ", ".join(f"{k}: {v}" for k, v in sorted(kinds.items())),
+             f"{len(mism)} day-to-day mismatches (today's price vs next day's 'yesterday') - spot-check these;",
+             "they are either genuine revisions or OCR mistakes.", "",
+             f"== COULD NOT BE READ ({len(failed)}) =="] + failed + ["", f"== MISMATCHES ({len(mism)}) =="] + mism
+    Path("infographic_report.txt").write_text("\n".join(lines), encoding="utf-8")
+    print("\n" + "\n".join(lines[:3]))
+
+
+if __name__ == "__main__":
+    args = sys.argv[1:]
+    folder = args[0] if args and not args[0].startswith("--") else "."
+    extras = args[args.index("--extra") + 1:] if "--extra" in args else []
+    sys.exit(main(folder, extras))
