@@ -190,3 +190,28 @@ def assign(pairs):
     return None, f"column sizes {sizes} match no known layout"
 
 
+def read_page(page):
+    words = text_words(page)
+    sources = []
+    if len(words) >= 150:
+        sources.append(("text", iter([words])))
+    else:
+        sources.append(("ocr", ocr_variants(page)))
+    why = "no reading attempted"
+    for src, it in sources:
+        for w in it:
+            layout, res = assign(make_pairs(to_values(w)))
+            if layout:
+                return src, layout, res, ""
+            why = res
+    return None, None, None, why
+
+
+# ---- main -------------------------------------------------------------------------------------
+def date_from_name(name):
+    m = FNAME_RE.search(name)
+    if not m or m.group(1).lower() not in MONTHS:
+        return None
+    return date(int(m.group(3)), MONTHS[m.group(1).lower()], int(m.group(2)))
+
+
