@@ -47,9 +47,35 @@ def clean(s):
     return re.sub(r"\s+", " ", s or "").strip()
 
 
+_MON = (r"(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|"
+        r"Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)")
+TEXT_DATE_PATTERNS = [   # (regex, order of the captured groups)
+    (re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?[ \t]+{_MON}\.?,?[ \t]+(\d{{4}})\b", re.I), "dmy"),
+    (re.compile(rf"\b{_MON}\.?[ \t]+(\d{{1,2}})(?:st|nd|rd|th)?,?[ \t]+(\d{{4}})\b", re.I), "mdy"),
+]
+_MONTH_NUM = {m: i for i, m in enumerate(
+    "jan feb mar apr may jun jul aug sep oct nov dec".split(), 1)}
+
+
+def find_report_date(text):
+    """First date in the text, as ISO. Accepts '24 December 2025', 'December 24, 2025',
+    abbreviated months, with or without a weekday in front. Returns '' if none."""
+    found = []
+    for rx, order in TEXT_DATE_PATTERNS:
+        for m in rx.finditer(text):
+            a, b, c = m.groups()
+            mon, day = (b, a) if order == "dmy" else (a, b)
+            try:
+                d = datetime(int(c), _MONTH_NUM[mon[:3].lower()], int(day))
+            except (ValueError, KeyError):
+                continue
+            found.append((m.start(), d.strftime("%Y-%m-%d")))
+    return min(found)[1] if found else ""
+
+
 def has_date(line):
     """True for the heading line that carries the report date (not a data row)."""
-    return bool(DATE_RE.search(line))
+    return bool(DATE_RE.search(line) or find_report_date(line))
 
 
 def iso_date(raw):
@@ -181,9 +207,7 @@ def convert(pdf_path, warn=lambda msg: None, trust_text=False):
         for page in pdf.pages:
             text = page.extract_text() or ""
             if not report_date:
-                m = DATE_RE.search(text)
-                if m:
-                    report_date = iso_date(m.group(2))
+                report_date = find_report_date(text)
             # The NCR summary pages have a "PREVAILING" column; everything else is tried
             # as a per-market page.
             commodities, rows = ((None, []) if "PREVAILING" in text.upper()
@@ -240,12 +264,58 @@ def write_rows(path, header, rows):
 
 
 # ----------------------------------------------------------------- workers
+MONTHS = ("january february march april may june july august september october "
+          "november december").split()
+_MONTH_RE = "|".join(m[:3] + r"[a-z]*" for m in MONTHS)
+FNAME_DATE_PATTERNS = [
+    (re.compile(r"(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})"), "ymd_num"),
+    (re.compile(rf"({_MONTH_RE})[\s_.,-]*(\d{{1,2}})[\s_.,-]+(\d{{4}})", re.I), "mdy"),
+    (re.compile(rf"(\d{{1,2}})[\s_.,-]*({_MONTH_RE})[\s_.,-]*(\d{{4}})", re.I), "dmy"),
+]
+
+
+def filename_date(path):
+    """Best-effort date from a file name like 'Price-Monitoring-December-24-2025.pdf'."""
+    name = Path(path).stem
+    for rx, kind in FNAME_DATE_PATTERNS:
+        m = rx.search(name)
+        if not m:
+            continue
+        try:
+            if kind == "ymd_num":
+                y, mo, d = (int(x) for x in m.groups())
+            else:
+                a, b, c = m.groups()
+                mon, day, y = (a, b, c) if kind == "mdy" else (b, a, c)
+                mo = [x[:3] for x in MONTHS].index(mon[:3].lower()) + 1
+                d, y = int(day), int(y)
+            return datetime(y, mo, d).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return ""
+
+
+def resolve_date(pdf, text_date, warnings):
+    """Date from the PDF text, else from the file name. Warns if they disagree."""
+    fn = filename_date(pdf)
+    if text_date and fn and text_date != fn:
+        warnings.append(f"report date {text_date} differs from the file name date "
+                        f"{fn}; using the report date")
+    if text_date:
+        return text_date
+    if not fn:
+        warnings.append("no date found in the PDF text or the file name; "
+                        "the date column will be blank")
+    return fn
+
+
 def work(job):
     """Runs in a worker process. Never raises; returns a plain tuple."""
     pdf, trust_text = job
     warnings = []
     try:
         report_date, order, markets, srows, info = convert(pdf, warnings.append, trust_text)
+        report_date = resolve_date(pdf, report_date, warnings)
         if not markets and not srows:
             return (pdf, report_date, [], {}, [], warnings,
                     "no price tables found", info)
