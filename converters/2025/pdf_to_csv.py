@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 """
-Convert a DA "Bantay Presyo" price monitoring PDF into a CSV file.
+Convert DA "Bantay Presyo" price monitoring PDFs into CSV files, one per PDF,
+in a "Per Market" folder created in the current folder (or --outdir).
 
-    python pdf_to_csv.py input.pdf        # writes input.csv next to the PDF
+Drag PDFs onto this file, or from a terminal:
+    python pdf_to_csv.py a.pdf b.pdf
+    python pdf_to_csv.py --all                  # every PDF in the current folder
+    python pdf_to_csv.py input.pdf -o prices.csv   # single file only
 
 Requires:  pip install pdfplumber
 """
 
+import argparse
 import csv
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -26,20 +32,25 @@ TOKEN_RE = re.compile(TOKEN)
 DATE_RE = re.compile(r"(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s+"
                      r"(\d{1,2}\s+\w+\s+\d{4})")
 MARKET_PAGE_MARK = "COMMODITY (PHP/KG)"
+MARKET_DIR = "Per Market"          # output folder names
+
 
 # ----------------------------------------------------------------- parsing
 def clean(s):
     return re.sub(r"\s+", " ", s or "").strip()
 
+
 def has_date(line):
     """True for the heading line that carries the report date (not a data row)."""
     return bool(DATE_RE.search(line))
+
 
 def iso_date(raw):
     try:
         return datetime.strptime(raw, "%d %B %Y").strftime("%Y-%m-%d")
     except ValueError:
         return raw
+
 
 def parse_price(cell):
     """'45.00 - 47.00' -> (45.0, 47.0); '45.00' -> (45.0, 45.0); N/A -> (None, None)."""
@@ -49,6 +60,7 @@ def parse_price(cell):
     nums = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", cell)]
     return (nums[0], nums[0]) if len(nums) == 1 else (min(nums), max(nums))
 
+
 def get_commodities(page):
     """Commodity names from the table header (the row starting with MARKET)."""
     for table in page.extract_tables():
@@ -57,6 +69,7 @@ def get_commodities(page):
                 # Merged cells can leave stray empty columns; drop them.
                 return [clean(c) for c in row[1:] if clean(c)]
     return None
+
 
 def parse_market_page(page, text, warn):
     commodities = get_commodities(page)
@@ -81,6 +94,7 @@ def parse_market_page(page, text, warn):
         market = clean(m.group("market"))
         rows.append((market, cells))
     return commodities, rows
+
 
 def convert(pdf_path, warn=lambda msg: None):
     """Open the PDF once. Returns (iso_date, commodity_order, markets)."""
@@ -107,6 +121,7 @@ def convert(pdf_path, warn=lambda msg: None):
                     prices[name] = parse_price(cell)
     return report_date, order, markets
 
+
 # ----------------------------------------------------------------- writing
 def fmt(x):
     return "" if x is None else f"{x:.2f}"
@@ -126,14 +141,80 @@ def write_wide(path, report_date, order, markets):
                 row += [fmt(low), fmt(high)]
             w.writerow(row)
 
+
+def pause():
+    """Keep the window open when launched by drag-and-drop / double-click."""
+    if sys.platform == "win32" and sys.stdin and sys.stdin.isatty():
+        input("\nPress Enter to close...")
+
+
+def find_pdfs(folder, recursive):
+    it = folder.rglob("*") if recursive else folder.iterdir()
+    return sorted(p for p in it if p.is_file() and p.suffix.lower() == ".pdf")
+
+
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("Usage: python pdf_to_csv.py input.pdf")
-    pdf = Path(sys.argv[1])
-    report_date, order, markets = convert(pdf, print)
-    out = pdf.with_suffix(".csv")
-    write_wide(out, report_date, order, markets)
-    print(f"Wrote {out} ({len(markets)} markets)")
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("pdfs", nargs="*", help="one or more input PDF files")
+    ap.add_argument("-o", "--output", help="output CSV (only with a single PDF)")
+    ap.add_argument("--all", action="store_true",
+                    help="convert every PDF in the current folder")
+    ap.add_argument("--outdir", default=".",
+                    help="folder in which to create 'Per Market' "
+                         "(default: current folder)")
+    ap.add_argument("-r", "--recursive", action="store_true",
+                    help="with --all, also search subfolders")
+    args = ap.parse_args()
+
+    if not args.pdfs and not args.all:
+        # Double-clicked with nothing dropped: offer to convert the whole folder.
+        if sys.stdin and sys.stdin.isatty():
+            print("No files given. Drag PDFs onto this script, or convert them all.")
+            if input(f"Convert every PDF in {Path.cwd()}? [Y/n] ").strip().lower() in ("", "y", "yes"):
+                args.all = True
+        if not args.all:
+            pause()
+            return
+
+    if args.all:
+        found = find_pdfs(Path.cwd(), args.recursive)
+        args.pdfs = [str(p) for p in found] + args.pdfs
+        print(f"Found {len(found)} PDF(s) in {Path.cwd()}"
+              f"{' (including subfolders)' if args.recursive else ''}", file=sys.stderr)
+    if not args.pdfs:
+        print("No PDF files found.")
+        pause()
+        return
+    if args.output and len(args.pdfs) > 1:
+        sys.exit("-o/--output can only be used with a single PDF.")
+
+    market_dir = Path(args.outdir) / MARKET_DIR
+    pdfs = list(dict.fromkeys(args.pdfs))
+    start = time.time()
+    done, failed = 0, 0
+    for n, pdf in enumerate(pdfs, 1):
+        tag = f"[{n}/{len(pdfs)}] {Path(pdf).name}"
+        warnings = []
+        try:
+            report_date, order, markets = convert(pdf, warnings.append)
+        except Exception as e:
+            failed += 1
+            print(f"{tag}  FAILED: {e}", file=sys.stderr)
+            continue
+        for w in warnings:
+            print(f"{tag}  ! {w}", file=sys.stderr)
+        out = Path(args.output) if args.output else market_dir / (Path(pdf).stem + ".csv")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        write_wide(out, report_date, order, markets)
+        done += 1
+        print(f"{tag}  ok ({len(markets)} markets)", file=sys.stderr)
+
+    print(f"\nDone: {done} converted, {failed} failed in {time.time() - start:.1f}s.",
+          file=sys.stderr)
+    pause()
+    sys.exit(1 if failed else 0)
+
 
 if __name__ == "__main__":
     main()
