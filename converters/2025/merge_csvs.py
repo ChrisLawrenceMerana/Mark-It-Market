@@ -16,7 +16,9 @@ tidy format automatically.
                                           # its "Per Market" and "NCR Summary" folders
     python merge_csvs.py a/*.csv b/*.csv  # or give specific files / wildcards
 
-Rows are sorted by date and exact duplicate rows are removed. A blank date is filled in from the file name
+Rows are sorted by date and exact duplicate rows are removed. Rows whose market or
+commodity name is garbled (typical of scanned PDFs with a bad OCR text layer) are
+dropped, with a warning. A blank date is filled in from the file name
 (e.g. Price-Monitoring-April-1-2025.csv).
 """
 import argparse
@@ -32,6 +34,7 @@ MARKETS_HEADER = ["date", "market", "commodity", "unit", "price_low", "price_hig
 SUMMARY_HEADER = ["date", "group", "commodity", "unit", "low", "high", "prevailing",
                   "average", "source_file"]
 
+GARBLED_FILE_SHARE = 0.25   # a file with this share of garbled rows is a scan: drop all of it
 OUTPUTS = {"markets": "merged_markets.csv", "summary": "merged_ncr_summary.csv"}
 IGNORE = set(OUTPUTS.values()) | {"conversion_errors.csv", "coverage.csv", "coverage_log.csv"}
 WIDE_COL = re.compile(r"^(?P<name>.+) (?P<end>Low|High) \((?P<unit>[^)]+)\)$")
@@ -70,6 +73,35 @@ def filename_date(path):
     return ""
 
 
+def plausible_market(name):
+    """Garbled OCR text from scanned PDFs gives 'market names' with digits/punctuation."""
+    return (3 <= len(name) <= 60 and not re.search(r"\d", name)
+            and "NOT AVAIL" not in name.upper())
+
+
+def plausible_commodity(name):
+    return (2 <= len(name) <= 50 and not re.search(r"\d+\.\d{2}", name)
+            and "NOT AVAIL" not in name.upper())
+
+
+def drop_garbled(kind, rows):
+    """Remove rows with garbled names. Judged per source file: if a quarter or more of one
+    PDF's rows are garbled it is a scan, so ALL of that PDF's rows are dropped (what
+    survives from a scan is unreliable). Returns (kept_rows, number_dropped)."""
+    name_ok = plausible_market if kind == "markets" else plausible_commodity
+    col = 1 if kind == "markets" else 2
+    by_source = {}
+    for r in rows:
+        by_source.setdefault(r[-1], []).append(r)
+    kept = []
+    for group in by_source.values():
+        ok = [r for r in group if name_ok(r[col])]
+        if (len(group) - len(ok)) / len(group) >= GARBLED_FILE_SHARE:
+            continue
+        kept.extend(ok)
+    return kept, len(rows) - len(kept)
+
+
 def iso(value):
     """'Wednesday, 24 December 2025' -> '2025-12-24'; anything else unchanged."""
     m = OLD_DATE.fullmatch(value.strip())
@@ -82,7 +114,9 @@ def iso(value):
 
 
 def read_file(path):
-    """Returns (kind, rows) with rows in the standard tidy layout.
+    """Returns (kind, rows, dropped): rows in the standard tidy layout, and how many
+    unreadable rows (garbled OCR text) were left out. If a quarter or more of a file's
+    rows are garbled, the whole file is treated as a scan and all its rows are dropped.
     Raises ValueError for bad files."""
     src = Path(path).name
     with open(path, newline="", encoding="utf-8-sig") as f:       # strips the BOM
@@ -107,7 +141,8 @@ def read_file(path):
             for (name, unit), idx in pairs.items():
                 rows.append([iso(row[0]) or filename_date(src), row[1], name, unit,
                              row[idx["Low"]], row[idx["High"]], src])
-        return "markets", rows
+        kept, dropped = drop_garbled("markets", rows)
+        return "markets", kept, dropped
 
     if "market" in header and "price_low" in header:
         std = MARKETS_HEADER[:-1]
@@ -127,7 +162,8 @@ def read_file(path):
         source = row[len(want)] if len(row) > len(want) and row[len(want)] else src
         out = [iso(row[0]) or filename_date(source)] + row[1:len(want)] + [source]
         rows.append(out)
-    return kind, rows
+    kept, dropped = drop_garbled(kind, rows)     # OCR garbage from scanned PDFs
+    return kind, kept, dropped
 
 
 def main():
@@ -149,14 +185,16 @@ def main():
                  "'NCR Summary' folders.")
 
     data = {k: {"rows": [], "seen": set(), "dupes": 0, "files": 0} for k in OUTPUTS}
-    skipped = []
+    skipped, garbled = [], {}
     for p in paths:
         try:
-            kind, rows = read_file(p)
+            kind, rows, dropped = read_file(p)
         except (OSError, ValueError, IndexError) as e:
             skipped.append((p, str(e)))
             print(f"SKIPPED {p}: {e}", file=sys.stderr)
             continue
+        if dropped:
+            garbled[p] = dropped
         d = data[kind]
         n = 0
         for row in rows:
@@ -170,6 +208,13 @@ def main():
         d["files"] += 1
         print(f"{p}: {n} {kind} rows", file=sys.stderr)
 
+    if garbled:
+        print(f"WARNING: {sum(garbled.values())} unreadable rows (garbled text, usually from "
+              f"scanned PDFs) were dropped from {len(garbled)} file(s):", file=sys.stderr)
+        for g in sorted(garbled)[:10]:
+            print(f"    {g}: {garbled[g]} row(s)", file=sys.stderr)
+        if len(garbled) > 10:
+            print(f"    ... and {len(garbled) - 10} more", file=sys.stderr)
 
     headers = {"markets": MARKETS_HEADER, "summary": SUMMARY_HEADER}
     wrote = 0
