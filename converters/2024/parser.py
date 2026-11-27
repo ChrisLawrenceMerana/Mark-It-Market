@@ -443,3 +443,134 @@ def group_lines(words):
         else:
             lines.append({"y": _yc(w), "words": [w]})
     return lines
+
+
+# 1. Per-market grid entry point
+
+def parse_market_page(
+    pdf_path,
+    strict: bool = True,
+    skip_images: bool = True,
+    raise_on_skip: bool = False,
+) -> pd.DataFrame:
+    pdf_path = Path(pdf_path)
+    n_cols = 1 + len(COMMODITIES)
+
+    with pdfplumber.open(pdf_path) as pdf:
+        if skip_images and is_image_only_pdf(pdf):
+            msg = f"Skipping '{pdf_path.name}': no readable text (appears to be an image)."
+            if raise_on_skip:
+                raise SkippedImagePDFError(msg)
+            return _empty_market_df()
+
+        if not has_market_grid(pdf):
+            if not strict:
+                first_page = pdf.pages[0] if pdf.pages else None
+                report_date = read_date(pdf, first_page, pdf_path=pdf_path) if first_page else None
+                return _empty_market_fallback(report_date)
+            raise ParseError(
+                f"'{pdf_path.name}' has no per-market grid page (likely a summary-only PDF)."
+            )
+
+        page = find_grid_page(pdf)
+        if skip_images and is_image_only_pdf(pdf, page=page):
+            msg = (
+                f"Skipping '{pdf_path.name}' grid page: no readable text "
+                "(appears to be an image)."
+            )
+            if raise_on_skip:
+                raise SkippedImagePDFError(msg)
+            return _empty_market_df()
+
+        report_date = read_date(pdf, page, pdf_path=pdf_path)
+        words = _split_merged_words(page.extract_words())
+
+    header_top, header_bottom, table_bottom = find_table_bounds(page, words)
+    region = [
+        w for w in words
+        if w["top"] >= header_top - 0.5 and w["bottom"] <= table_bottom + 0.5
+    ]
+
+    if not region:
+        if strict:
+            raise ParseError("Could not locate any price cells below the header.")
+        return _empty_market_fallback(report_date)
+
+    bands = cluster_columns(region, n_cols, strict=strict)
+    edges = [(bands[i][1] + bands[i + 1][0]) / 2 for i in range(len(bands) - 1)]
+
+    def col_of(w):
+        return bisect.bisect(edges, _xc(w))
+
+    header_words = [w for w in region if w["bottom"] <= header_bottom + 0.5]
+    for i, (name, _unit, keys, _group) in enumerate(COMMODITIES, start=1):
+        parts = sorted(
+            (w for w in header_words if col_of(w) == i),
+            key=lambda w: (round(w["top"]), w["x0"]),
+        )
+        text = "".join(w["text"] for w in parts).lower()
+
+        if keys and not any(k in text for k in keys):
+            msg = (
+                f"Column {i} should be '{name}' but its header reads {text!r} "
+                f"(expected one of {keys})."
+            )
+            if strict:
+                raise ParseError(msg)
+
+    body = [w for w in region if w["top"] >= header_bottom - 0.5]
+    name_lines = group_lines([w for w in body if col_of(w) == 0])
+    if not body or len(name_lines) < 2:
+        if strict:
+            raise ParseError("Could not find market rows or price cells on grid page.")
+        return _empty_market_fallback(report_date)
+
+    centers = [ln["y"] for ln in name_lines]
+    pitch = statistics.median(b - a for a, b in zip(centers, centers[1:]))
+    max_dist = 0.6 * pitch
+
+    cells = {}
+    for w in body:
+        r = min(range(len(centers)), key=lambda i: abs(centers[i] - _yc(w)))
+        if abs(centers[r] - _yc(w)) > max_dist:
+            continue
+        cells.setdefault((r, col_of(w)), []).append(w)
+
+    def cell_text(r, c):
+        return " ".join(
+            w["text"] for w in sorted(cells.get((r, c), []), key=lambda w: w["x0"])
+        )
+
+    records, problems = [], []
+    for r in range(len(centers)):
+        market, city = split_market(cell_text(r, 0))
+        if not market:
+            continue
+        for c, (commodity, unit, _keys, _group) in enumerate(COMMODITIES, start=1):
+            lo, hi, status = parse_cell(cell_text(r, c))
+            if status in ("blank", "bad"):
+                problems.append(
+                    f"{market} / {commodity}: {status} cell {cell_text(r, c)!r}"
+                )
+            records.append({
+                "date": report_date,
+                "market": market,
+                "city": city,
+                "commodity": commodity,
+                "unit": unit,
+                "price_min": lo,
+                "price_max": hi,
+                "available": status == "ok",
+            })
+
+    df = pd.DataFrame(records, columns=MARKET_COLUMNS)
+    df["price_min"] = pd.to_numeric(df["price_min"])
+    df["price_max"] = pd.to_numeric(df["price_max"])
+
+    if strict:
+        problems += validate(df)
+        if problems:
+            shown = "\n  - ".join(problems[:10])
+            more = f"\n  ... and {len(problems) - 10} more" if len(problems) > 10 else ""
+            raise ParseError(f"{pdf_path.name} failed validation:\n  - {shown}{more}")
+    return df
