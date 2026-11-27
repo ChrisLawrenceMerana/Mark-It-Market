@@ -38,3 +38,95 @@ PRICE_RE = re.compile(r"^\d{1,3}(?:,\d{3})*\.\d{2}$")
 
 # ----------------------------------------------------------------------------------------
 # 1. NCR SUMMARY (tabled format)
+# ----------------------------------------------------------------------------------------
+VAL = r"(?:\d{1,3}(?:,\d{3})*\.\d{2}|NONE)"
+LINE_RE = re.compile(rf"^(?P<label>.*?)(?:\s+(?P<hi>{VAL})\s+(?P<lo>{VAL})\s+(?P<pv>{VAL}))?\s*$")
+
+GROUPS = {
+    "NFA RICE": "NFA Rice",
+    "IMPORTED COMMERCIAL RICE": "Imported Commercial Rice",
+    "LOCAL COMMERCIAL RICE": "Local Commercial Rice",
+    "FISH": "Fish",
+    "LIVESTOCK & POULTRY PRODUCTS": "Livestock And Poultry Products",
+    "LOWLAND VEGETABLES": "Lowland Vegetables",
+    "HIGHLAND VEGETABLES": "Highland Vegetables",
+    "SPICES": "Spices",
+    "FRUITS": "Fruits",
+    "OTHER BASIC COMMODITIES": "Other Commodities",
+}
+RICE = [
+    (r"^Special", "Special", "PHP/kg"),
+    (r"^Premium", "Premium", "PHP/kg"),
+    (r"^Well milled", "Well Milled", "PHP/kg"),
+    (r"^Regular milled", "Regular Milled", "PHP/kg"),
+]
+# (regex on the start of the label, name written to the CSV, unit) - first match wins
+ITEMS = {
+    "NFA Rice": [(r"^NFA", "NFA (Well Milled)", "PHP/kg")],
+    "Imported Commercial Rice": RICE,
+    "Local Commercial Rice": RICE,
+    "Fish": [
+        (r"^Bangus", "Milkfish (Bangus)", "PHP/kg"),
+        (r"^Tilapia", "Tilapia", "PHP/kg"),
+        (r"^Galunggong \(Local\)", "Local Round Scad (Galunggong)", "PHP/kg"),
+        (r"^Galunggong \(Imported\)", "Imported Round Scad (Galunggong)", "PHP/kg"),
+        (r"^Alumahan", "Alumahan", "PHP/kg"),
+    ],
+    "Livestock And Poultry Products": [
+        (r"^Beef Rump", "Beef Rump", "PHP/kg"),
+        (r"^Beef Brisket", "Beef Brisket", "PHP/kg"),
+        (r"^Pork Ham", "Pork Ham", "PHP/kg"),
+        (r"^Pork Belly", "Pork Belly", "PHP/kg"),
+        (r"^Whole Chicken", "Whole Chicken", "PHP/kg"),
+        (r"^Chicken Egg", "Chicken Egg (Medium)", "PHP/piece"),
+    ],
+    "Lowland Vegetables": [
+        (r"^Ampalaya", "Bittergourd (Ampalaya)", "PHP/kg"),
+        (r"^Sitao", "String Beans (Sitao)", "PHP/kg"),
+        (r"^Pechay \(Native\)", "Pechay Tagalog", "PHP/kg"),
+        (r"^Squash", "Squash (Kalabasa)", "PHP/kg"),
+        (r"^Eggplant", "Eggplant (Talong)", "PHP/kg"),
+        (r"^Tomato", "Tomato (Kamatis)", "PHP/kg"),
+    ],
+    "Highland Vegetables": [
+        (r"^Cabbage", "Cabbage Repolyo (Scorpio)", "PHP/kg"),
+        (r"^Carrots?", "Carrot (Karot)", "PHP/kg"),
+        (r"^Habitchuelas", "Baguio Beans (Habitchuelas)", "PHP/kg"),
+        (r"^White Potato", "White Potato (Patatas)", "PHP/kg"),
+        (r"^Pechay \(Baguio\)", "Pechay Baguio", "PHP/kg"),
+        (r"^Chayote", "Chayote (Sayote)", "PHP/kg"),
+    ],
+    "Spices": [
+        (r"^Red Onion \(Imported\)", "Imported Red Onion", "PHP/kg"),
+        (r"^Red Onion", "Local Red Onion (Pulang Sibuyas)", "PHP/kg"),
+        (r"^White Onion \(Imported\)", "Imported White Onion", "PHP/kg"),
+        (r"^White Onion", "Local White Onion (Puting Sibuyas)", "PHP/kg"),
+        (r"^Garlic \(Imported\)", "Imported Garlic (Bawang)", "PHP/kg"),
+        (r"^Garlic \(Native\)", "Local Garlic (Bawang)", "PHP/kg"),
+        (r"^Ginger", "Ginger (Luya)", "PHP/kg"),
+        (r"^Chill?i", "Chili (Siling labuyo)", "PHP/kg"),
+    ],
+    "Fruits": [
+        (r"^Calamansi", "Calamansi", "PHP/kg"),
+        (r"^Banana \(Lakatan\)", "Banana (Lakatan)", "PHP/kg"),
+        (r"^Banana \(Latundan\)", "Banana (Latundan)", "PHP/kg"),
+        (r"^Papaya", "Papaya", "PHP/kg"),
+        (r"^Mango", "Mango (Carabao)", "PHP/kg"),
+    ],
+    "Other Commodities": [
+        (r"^Sugar \(Refined\)", "Sugar (Refined)", "PHP/kg"),
+        (r"^Sugar \(Washed\)", "Sugar (Washed)", "PHP/kg"),
+        (r"^Sugar \(Brown\)", "Sugar (Brown)", "PHP/kg"),
+        (r"^Cooking oil \(Palm\) 350", "Palm Oil - 350ml", "PHP/bottle"),
+        (r"^Cooking oil \(Palm\) 1", "Palm Oil - 1L", "PHP/bottle"),
+        (r"^Cooking oil \(Coconut\) 350", "Coconut Oil - 350ml", "PHP/bottle"),
+        (r"^Cooking oil \(Coconut\) 1", "Coconut Oil - 1L", "PHP/bottle"),
+    ],
+}
+SUMMARY_FIELDS = ["date", "group", "commodity", "unit", "low", "high", "prevailing", "average", "source_file"]
+
+
+def num(v):
+    return "" if v is None or v == "NONE" else float(v.replace(",", ""))
+
+
