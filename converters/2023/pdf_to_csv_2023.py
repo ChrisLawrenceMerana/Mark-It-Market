@@ -224,3 +224,172 @@ def resolve_market(name, known):
         return next((k for k in known if k.lower() == target.lower()), target)
     keys = {market_key(k): k for k in known}
     return keys.get(market_key(name))
+
+
+# NCR-wide summary (one-page infographic: Low - High only)
+# One entry per commodity on the infographic: (group, name in the CSV, pattern that
+# matches the label printed next to the price). The rice rows are handled separately
+# (their group depends on the column). Rows are written in this order. A label that
+# matches nothing here is still written (with a blank group) and reported with a
+# warning
+LIVESTOCK = "Livestock And Poultry Products"
+SUMMARY_ITEMS = [
+    ("Corn", "Corn (White)", r"^corn \(white\)"),
+    ("Corn", "Corn (Yellow)", r"^corn \(yellow\)"),
+    (LIVESTOCK, "Beef Rump", r"^beef rump"),
+    (LIVESTOCK, "Beef Brisket", r"^beef brisket"),
+    (LIVESTOCK, "Pork Kasim", r"^pork kasim"),
+    (LIVESTOCK, "Pork Liempo", r"^pork liempo"),
+    (LIVESTOCK, "Whole Chicken", r"^whole chicken"),
+    (LIVESTOCK, "Egg (Medium)", r"^egg \(medium\)"),
+    ("Fish", "Milkfish (Bangus)", r"^milkfish"),
+    ("Fish", "Tilapia", r"^tilapia"),
+    ("Fish", "Local Round Scad (Galunggong)", r"^local round scad"),
+    ("Fish", "Imported Round Scad (Galunggong)", r"^imported round scad"),
+    ("Fish", "Alumahan", r"alumahan|indian mackerel"),
+    ("Lowland Vegetables", "Bittergourd (Ampalaya)", r"^bittergourd"),
+    ("Lowland Vegetables", "String Beans (Sitao)", r"^string beans"),
+    ("Lowland Vegetables", "Pechay Tagalog", r"^pechay tagalog"),
+    ("Lowland Vegetables", "Squash (Kalabasa)", r"^squash"),
+    ("Lowland Vegetables", "Eggplant (Talong)", r"^eggplant"),
+    ("Lowland Vegetables", "Tomato (Kamatis)", r"^tomato"),
+    ("Highland Vegetables", "Cabbage (Repolyo)", r"^cabbage"),
+    ("Highland Vegetables", "Carrot (Karot)", r"^carrot"),
+    ("Highland Vegetables", "Baguio Beans (Habitchuelas)", r"^baguio beans"),
+    ("Highland Vegetables", "White Potato (Patatas)", r"^white potato"),
+    ("Highland Vegetables", "Pechay Baguio", r"^pechay baguio"),
+    ("Highland Vegetables", "Chayote (Sayote)", r"^chayote"),
+    ("Fruits", "Calamansi", r"^calamansi"),
+    ("Fruits", "Banana (Lakatan)", r"^banana \(lakatan\)"),
+    ("Fruits", "Banana (Latundan)", r"^banana \(latundan\)"),
+    ("Fruits", "Papaya", r"^papaya"),
+    ("Fruits", "Mango (Carabao)", r"^mango"),
+    ("Other Commodities", "Sugar (Refined)", r"^sugar refined"),
+    ("Other Commodities", "Sugar (Washed)", r"^sugar washed"),
+    ("Other Commodities", "Sugar (Brown)", r"^sugar brown"),
+    ("Other Commodities", "Palm Oil - 350ml", r"^palm oil\s*-\s*350\s*ml"),
+    ("Other Commodities", "Palm Oil - 1L", r"^palm oil\s*-\s*1\s*l"),
+    ("Other Commodities", "Coconut Oil - 350ml", r"^coconut oil\s*-\s*350\s*ml"),
+    ("Other Commodities", "Coconut Oil - 1L", r"^coconut oil\s*-\s*1\s*l"),
+    ("Spices", "Local Red Onion (Pulang Sibuyas)", r"^local red onion"),
+    ("Spices", "Imported Red Onion (Medium size)", r"^imported red onion"),
+    ("Spices", "Local White Onion (Puting Sibuyas)", r"^local white onion"),
+    ("Spices", "Imported White Onion (Medium size)", r"^imported white onion"),
+    ("Spices", "Imported Garlic (Bawang)", r"^imported garlic"),
+    ("Spices", "Local Garlic (Bawang)", r"^local garlic"),
+    ("Spices", "Ginger (Luya)", r"^ginger"),
+    ("Spices", "Chili (Siling labuyo)", r"^chil|siling labuyo"),
+]
+# Rice rows: the same four grades are printed under both rice headings.
+RICE_GRADES = [
+    ("Special", r"^special"),
+    ("Premium", r"^premium"),
+    ("Well Milled", r"^well-?\s?milled"),
+    ("Regular Milled", r"^regular\s?milled"),
+]
+RICE_GROUPS = [("Imported Commercial Rice", "IMPORTED"), ("Local Commercial Rice", "LOCAL")]
+_GROUP_ORDER = [g for g, _ in RICE_GROUPS]
+
+PRICE_CELL = rf"{NA}|\d+\.\d+\s*-\s*\d+\.\d+"   # needs decimals: skips the phone numbers
+_LABEL_DROP = {"(per", "kg)", "per", "piece"}
+
+
+def touching(words, price_x0):
+    """The words that form one label with the one nearest the price box (an empty grey
+    box next to it must not pull in the neighbouring label)."""
+    if not words:
+        return words
+    first = max(words, key=lambda w: w["x1"])
+    group, lo, hi = [first], first["x0"], first["x1"]
+    changed = True
+    while changed:
+        changed = False
+        for w in words:
+            if w not in group and w["x1"] >= lo - 8 and w["x0"] <= hi + 8:
+                group.append(w)
+                lo, hi = min(lo, w["x0"]), max(hi, w["x1"])
+                changed = True
+    return group
+
+
+def label_text(words):
+    """Printed label from the words beside a price (may span two lines)."""
+    keep = [w for w in words
+            if not (w["text"].isalpha() and w["text"].isupper())   # panel headings (FISH, CORN...)
+            and w["text"] not in _LABEL_DROP                       # "(per kg)", "per piece"
+            and not re.fullmatch(r"[a-d]", w["text"])              # footnote letters
+            and not re.fullmatch(r"-?\d+\.\d+-?", w["text"])]      # a neighbouring price
+    keep.sort(key=lambda w: w["top"])
+    lines = []
+    for w in keep:
+        if lines and abs(w["top"] - lines[-1][0]["top"]) < 4:
+            lines[-1].append(w)
+        else:
+            lines.append([w])
+    return clean(" ".join(w["text"] for ln in lines
+                          for w in sorted(ln, key=lambda w: w["x0"])))
+
+
+def parse_summary_page(page, warn=lambda msg: None):
+    """NCR-wide Low/High rows from the one-page infographic.
+
+    Each price box is paired with the label printed to its left (up to the previous
+    price box in the same row). Rows: [group, name, unit, low, high, prevailing, average];
+    prevailing and average are None because this layout does not print them.
+    """
+    words = page.extract_words(x_tolerance=1.5, y_tolerance=2)
+    y_max = next((w["top"] for w in words if w["text"] == "Covered:"), page.height)
+    cells = [c for c in page.search(PRICE_CELL, regex=True) if c["bottom"] < y_max]
+    mid = lambda o: (o["top"] + o["bottom"]) / 2
+    headers = {}                                # x position of the rice headings
+    for group, word in RICE_GROUPS:
+        for w in words:
+            if w["text"] == word:
+                headers[group] = w["x0"]
+
+    found = {}                                  # (group, name) -> row
+    for c in cells:
+        left = max((o["x1"] for o in cells if o is not c and abs(mid(o) - mid(c)) < 12
+                    and o["x1"] <= c["x0"]), default=0)
+        near = [w for w in words if left - 1 <= w["x0"] and w["x1"] <= c["x0"] + 1
+                and abs(mid(w) - mid(c)) <= 11]
+        label = label_text(touching(near, c["x0"]))
+        if not label:
+            continue
+        low, high = parse_price(c["text"])      # NOT AVAILABLE -> (None, None)
+
+        group = name = None
+        for grade, rx in RICE_GRADES:
+            if re.search(rx, label, re.IGNORECASE) and headers:
+                cand = [(x, g) for g, x in headers.items() if x <= c["x0"] + 5]
+                group, name = (max(cand)[1] if cand else ""), grade
+                break
+        else:
+            for g, n, rx in SUMMARY_ITEMS:
+                if re.search(rx, label, re.IGNORECASE):
+                    group, name = g, n
+                    break
+        if name is None:
+            group, name = "", label
+            warn(f"summary: no group/name rule for label '{label}'")
+        if (group, name) in found:
+            warn(f"summary: '{name}' found twice, keeping the first")
+            continue
+        found[(group, name)] = [group, name, unit_for(name), low, high, None, None]
+
+    grades = [n for n, _ in RICE_GRADES]
+    known = [(g, n) for g, n, _ in SUMMARY_ITEMS]
+
+    def sort_key(row):                          # imported rice, local rice, then the table order
+        if row[0] in _GROUP_ORDER and row[1] in grades:
+            return (0, _GROUP_ORDER.index(row[0]), grades.index(row[1]))
+        key = (row[0], row[1])
+        return (1, known.index(key), 0) if key in known else (2, 0, 0)
+
+    return sorted(found.values(), key=sort_key)
+
+
+def unit_for(name):
+    if re.search(r"\b(350ml|1L)\b", name):
+        return "PHP/bottle"
+    return "PHP/piece" if re.search(r"\bEgg\b", name) else "PHP/kg"
