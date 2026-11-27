@@ -574,3 +574,131 @@ def parse_market_page(
             more = f"\n  ... and {len(problems) - 10} more" if len(problems) > 10 else ""
             raise ParseError(f"{pdf_path.name} failed validation:\n  - {shown}{more}")
     return df
+
+
+# 2. Daily NCR summary entry point (keeps NaN + provenance columns)
+
+def _compute_market_stats(
+    market_df: pd.DataFrame | None,
+) -> dict[str, tuple[float, float, float, float, int]]:
+    """Compute (low, high, prevailing, average, market_count) per commodity from market_df."""
+    if market_df is None or market_df.empty:
+        return {}
+    avail = market_df[market_df["available"]].copy()
+    if avail.empty:
+        return {}
+    avail["mid"] = (avail["price_min"] + avail["price_max"]) / 2.0
+    stats = {}
+    for commodity, grp in avail.groupby("commodity"):
+        cnt = int(len(grp))
+        lo = float(grp["price_min"].min())
+        hi = float(grp["price_max"].max())
+        modes = grp["mid"].mode()
+        prev = float(modes.iloc[0]) if not modes.empty else float(grp["mid"].median())
+        avg = round(float(grp["mid"].mean()), 2)
+        stats[commodity] = (lo, hi, prev, avg, cnt)
+    return stats
+
+
+def parse_daily_summary(
+    pdf_path,
+    market_df: pd.DataFrame | None = None,
+    skip_images: bool = True,
+    raise_on_skip: bool = False,
+) -> pd.DataFrame:
+    """
+    Extract the daily NCR summary table with NaN preserved when unavailable
+    and explicit provenance columns:
+        date, group, commodity, unit, low, high, prevailing, average,
+        market_count, prevailing_source, average_source
+    """
+    pdf_path = Path(pdf_path)
+    with pdfplumber.open(pdf_path) as pdf:
+        if skip_images and is_image_only_pdf(pdf):
+            msg = f"Skipping '{pdf_path.name}': no readable text (appears to be an image)."
+            if raise_on_skip:
+                raise SkippedImagePDFError(msg)
+            return _empty_summary_df()
+
+        page = find_summary_page(pdf)
+        if skip_images and is_image_only_pdf(pdf, page=page):
+            msg = (
+                f"Skipping '{pdf_path.name}' summary page: no readable text "
+                "(appears to be an image)."
+            )
+            if raise_on_skip:
+                raise SkippedImagePDFError(msg)
+            return _empty_summary_df()
+
+        report_date = read_date(pdf, page, pdf_path=pdf_path)
+        raw_text = page.extract_text() or ""
+
+    market_stats = _compute_market_stats(market_df)
+    normalized = re.sub(r"\s+", " ", raw_text)
+
+    records = []
+    for group, commodity, unit, pattern in SUMMARY_ITEMS_2024:
+        m = re.search(pattern, normalized, flags=re.IGNORECASE)
+        lo = hi = prev = avg = math.nan
+        market_count = 0
+
+        if m:
+            window = normalized[m.end(): m.end() + 90]
+            if not re.match(r"^\s*NOT\s+AVAIL", window, flags=re.IGNORECASE):
+                rm = re.search(
+                    r"(\d[\d,]*\.\d{2})\s*(?:[*]+\s*)?(?:-\s*(\d[\d,]*\.\d{2}))?",
+                    window,
+                )
+                if rm:
+                    v1 = float(rm.group(1).replace(",", ""))
+                    v2 = float(rm.group(2).replace(",", "")) if rm.group(2) else v1
+                    lo, hi = min(v1, v2), max(v1, v2)
+
+        if commodity in market_stats:
+            m_lo, m_hi, m_prev, m_avg, m_cnt = market_stats[commodity]
+            market_count = m_cnt
+            if math.isnan(lo) or math.isnan(hi):
+                lo, hi = m_lo, m_hi
+            prev, avg = m_prev, m_avg
+
+        has_stats = not math.isnan(prev) and not math.isnan(avg)
+        records.append({
+            "date": report_date,
+            "group": group,
+            "commodity": commodity,
+            "unit": unit,
+            "low": lo,
+            "high": hi,
+            "prevailing": prev,
+            "average": avg,
+            "market_count": market_count,
+            "prevailing_source": "market_derived" if has_stats else "missing_no_market_data",
+            "average_source": "market_derived" if has_stats else "missing_no_market_data",
+        })
+
+    df = pd.DataFrame(records, columns=SUMMARY_COLUMNS)
+    for col in ("low", "high", "prevailing", "average"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df["market_count"] = pd.to_numeric(df["market_count"], errors="coerce").fillna(0).astype(int)
+    return df
+
+
+def validate(df: pd.DataFrame):
+    problems = []
+    if df.empty:
+        return problems
+    n = df["market"].nunique()
+    if EXPECTED_MARKETS is not None and n != EXPECTED_MARKETS:
+        problems.append(f"expected {EXPECTED_MARKETS} markets, found {n}")
+    avail = df[df["available"]]
+    bad = avail[avail["price_min"] > avail["price_max"]]
+    if len(bad):
+        problems.append(f"{len(bad)} rows have price_min > price_max")
+    out = avail[
+        (avail["price_min"] <= PRICE_FLOOR) | (avail["price_max"] > PRICE_CEILING)
+    ]
+    if len(out):
+        problems.append(f"{len(out)} prices outside {PRICE_FLOOR}-{PRICE_CEILING}")
+    if df.groupby("market")["available"].sum().eq(0).any():
+        problems.append("at least one market has no available prices at all")
+    return problems
