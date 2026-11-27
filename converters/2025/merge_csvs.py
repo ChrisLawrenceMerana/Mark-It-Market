@@ -9,6 +9,8 @@ It accepts any mix of what pdf_to_csv.py produces and tells them apart from
 their headers:
     - all_markets.csv / all_ncr_summary.csv   (from --combine)
     - <name>.csv / <name>_ncr_summary.csv     (one pair per PDF)
+Per-market files in the wide format (one row per market) are converted to the
+tidy format automatically.
 
     python merge_csvs.py                  # merges the CSVs in the current folder and in
                                           # its "Per Market" and "NCR Summary" folders
@@ -19,6 +21,7 @@ Rows are sorted by date and exact duplicate rows are removed.
 import argparse
 import csv
 import glob
+import re
 import sys
 from pathlib import Path
 
@@ -29,6 +32,7 @@ SUMMARY_HEADER = ["date", "group", "commodity", "unit", "low", "high", "prevaili
 
 OUTPUTS = {"markets": "merged_markets.csv", "summary": "merged_ncr_summary.csv"}
 IGNORE = set(OUTPUTS.values()) | {"conversion_errors.csv", "coverage.csv", "coverage_log.csv"}
+WIDE_COL = re.compile(r"^(?P<name>.+) (?P<end>Low|High) \((?P<unit>[^)]+)\)$")
 
 
 def read_file(path):
@@ -39,6 +43,25 @@ def read_file(path):
         r = csv.reader(f)
         header = next(r, None) or []
         body = [row for row in r if row]
+
+    if header and header[:2] == ["date", "market"] and "price_low" not in header:
+        # wide per-PDF file: date, market, <name> Low (<unit>), <name> High (<unit>), ...
+        cols = []
+        for i, h in enumerate(header[2:], 2):
+            m = WIDE_COL.match(h)
+            if not m:
+                raise ValueError("unrecognised column in a markets file: " + h)
+            cols.append((i, m))
+        pairs = {}
+        for i, m in cols:
+            key = (m["name"], m["unit"])
+            pairs.setdefault(key, {})[m["end"]] = i
+        rows = []
+        for row in body:
+            for (name, unit), idx in pairs.items():
+                rows.append([row[0], row[1], name, unit,
+                             row[idx["Low"]], row[idx["High"]], src])
+        return "markets", rows
 
     if "market" in header and "price_low" in header:
         std = MARKETS_HEADER[:-1]
