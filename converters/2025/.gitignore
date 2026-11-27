@@ -1,0 +1,12 @@
+# generated output
+Per Market/
+NCR Summary/
+coverage.csv
+coverage_log.csv
+conversion_errors.csv
+merged_*.csv
+
+# inputs
+*.pdf
+
+__pycache__/
