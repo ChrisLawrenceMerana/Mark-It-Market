@@ -39,11 +39,26 @@ SUM_RE = re.compile(
     r"^(?P<name>.+?)\s+(?P<nums>\d+(?:\.\d+)?\**(?:\s*-\s*\d+(?:\.\d+)?\**)?"
     r"(?:\s+\d+(?:\.\d+)?){1,2})(?:\s+[A-Za-z()]{1,8})?$")
 MARKET_PAGE_MARK = "COMMODITY (PHP/KG)"
+SCAN_FRACTION = 0.6                 # one image covering this much of a page = a scan
+MIN_TEXT_CHARS = 20                 # fewer characters than this = page has no text layer
 MARKET_DIR = "Per Market"          # output folder names
 SUMMARY_DIR = "NCR Summary"
 
 
 # ----------------------------------------------------------------- parsing
+def scan_fraction(page):
+    """Share of the page covered by its single biggest image (1.0 = a full-page scan)."""
+    area = page.width * page.height
+    if not area:
+        return 0.0
+    best = 0.0
+    for im in page.images:
+        w = max(0.0, min(im["x1"], page.width) - max(im["x0"], 0.0))
+        h = max(0.0, min(im["bottom"], page.height) - max(im["top"], 0.0))
+        best = max(best, w * h)
+    return best / area
+
+
 def plausible_market(name):
     """Garbled OCR text produces 'market names' with digits and punctuation."""
     return (3 <= len(name) <= 60 and not re.search(r"\d", name)
@@ -219,21 +234,53 @@ def parse_summary_page(page, warn=lambda msg: None):
     return rows
 
 
+class NoTextError(ValueError):
+    """The PDF has no extractable text (e.g. it is a scan / pictures of pages)."""
+
+    def __init__(self, message, info=None):
+        super().__init__(message)
+        self.info = info or {}
+
+
 def convert(pdf_path, warn=lambda msg: None, trust_text=False):
-    """Open the PDF once. Returns (iso_date, commodity_order, markets, summary_rows, info)."""
+    """Open the PDF once. Returns (iso_date, commodity_order, markets, summary_rows)."""
     markets, order, srows = {}, [], []
     report_date = ""
     with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
+        if not pdf.pages:
+            raise ValueError("the PDF has no pages")
+        total_pages = len(pdf.pages)
+        text_pages, empty_pages, image_pages, image_nums = 0, [], 0, []
+        scanned_nums, unrecognised = [], []
+        for page_no, page in enumerate(pdf.pages, 1):
             text = page.extract_text() or ""
+            scanned = (not trust_text) and scan_fraction(page) >= SCAN_FRACTION
+            if scanned or len(text.strip()) < MIN_TEXT_CHARS:
+                empty_pages.append(page_no)
+                if page.images:
+                    image_pages += 1
+                    image_nums.append(page_no)
+                if scanned:
+                    scanned_nums.append(page_no)  # picture of a page; its text is OCR guesswork
+                continue                         # nothing to parse on this page
+            text_pages += 1
             if not report_date:
                 report_date = find_report_date(text)
             # The NCR summary pages have a "PREVAILING" column; everything else is tried
-            # as a per-market page.
+            # as a per-market page (this also skips the slow table detection on summaries).
             commodities, rows = ((None, []) if "PREVAILING" in text.upper()
                                  else parse_market_page(page, text, warn))
             if not commodities:
-                srows.extend(parse_summary_page(page, warn))
+                new_rows = parse_summary_page(page, warn)
+                if not new_rows:
+                    unrecognised.append(page_no)
+                    hint = ""
+                    if "PREVAILING" not in text.upper() and "NCR MARKETS" in text.upper():
+                        hint = (" (it looks like an NCR summary in a different layout, "
+                                "without Prevailing/Average columns; not supported yet)")
+                    warn(f"page {page_no}: has text but no price table was recognised; "
+                         f"skipped{hint}")
+                srows.extend(new_rows)
                 continue
             names = []
             for c in commodities:                # a leading '*' means "per piece"
@@ -244,7 +291,30 @@ def convert(pdf_path, warn=lambda msg: None, trust_text=False):
                 prices = markets.setdefault(market, {})
                 for name, cell in zip(names, cells):
                     prices[name] = parse_price(cell)
-    return report_date, order, markets, srows, {}
+
+    info = {"total_pages": total_pages, "text_pages": text_pages,
+            "image_pages": image_pages, "image_page_numbers": image_nums,
+            "scanned_pages": scanned_nums, "unrecognised_pages": unrecognised,
+            "blank_pages": len(empty_pages) - image_pages}
+    if text_pages == 0:
+        if scanned_nums:
+            raise NoTextError(
+                "this PDF is a scan: each page is one picture, and the text inside it is "
+                "garbled OCR output that cannot be parsed reliably. It needs the original "
+                "text-based PDF, or proper OCR (which this tool does not do)", info)
+        if image_pages:
+            raise NoTextError(
+                "no extractable text: this PDF is made of images (a scan or screenshot), "
+                "so there is nothing to read. It needs OCR first (e.g. OCRmyPDF), "
+                "which this tool does not do", info)
+        raise NoTextError("no extractable text: every page is blank", info)
+    if empty_pages:
+        pages = ", ".join(map(str, empty_pages))
+        kind = ("scanned (image with unreliable OCR text)" if scanned_nums
+                else "image-only" if image_pages else "blank")
+        warn(f"page(s) {pages} have no usable text ({kind}) and were skipped; "
+             f"data on them is missing")
+    return report_date, order, markets, srows, info
 
 
 # ----------------------------------------------------------------- writing
@@ -350,6 +420,8 @@ def work(job):
             return (pdf, report_date, [], {}, [], warnings,
                     "no price tables found", info)
         return pdf, report_date, order, markets, srows, warnings, None, info
+    except NoTextError as e:
+        return pdf, "", [], {}, [], warnings, str(e), e.info
     except Exception as e:
         return pdf, "", [], {}, [], warnings, str(e), {}
 
@@ -377,6 +449,8 @@ def main():
                          "(default: current folder)")
     ap.add_argument("-r", "--recursive", action="store_true",
                     help="with --all, also search subfolders")
+    ap.add_argument("--trust-text", action="store_true",
+                    help="parse the text of full-page scans anyway (normally skipped as unreliable)")
     ap.add_argument("--no-summary", action="store_true",
                     help="skip the NCR-wide Low/High/Prevailing/Average data")
     ap.add_argument("--long", action="store_true",
@@ -440,7 +514,7 @@ def main():
               file=sys.stderr)
 
     for n, pdf in enumerate(pdfs, 1):
-        handle(work((pdf, False)), n)
+        handle(work((pdf, args.trust_text)), n)
 
     print(f"\nDone: {done} converted, {failed} failed in {time.time() - start:.1f}s.",
           file=sys.stderr)
