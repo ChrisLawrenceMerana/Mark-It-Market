@@ -393,3 +393,148 @@ def unit_for(name):
     if re.search(r"\b(350ml|1L)\b", name):
         return "PHP/bottle"
     return "PHP/piece" if re.search(r"\bEgg\b", name) else "PHP/kg"
+
+
+def convert(pdf_path, warn=lambda msg: None, info=None):
+    """Open the PDF once. Returns (iso_date, commodity_order, markets, summary_rows)."""
+    markets, order, srows = {}, [], []
+    protein = []                                 # joined to `markets` after all pages are read
+    report_date = ""
+    with pdfplumber.open(pdf_path) as pdf:
+        if info is not None:
+            info["pages"], info["picture_pages"] = len(pdf.pages), []
+        for number, page in enumerate(pdf.pages, 1):
+            text = page.extract_text() or ""
+            if not text.strip() and page.images:
+                if info is not None:
+                    info["picture_pages"].append(number)
+                continue                         # a picture of a table: nothing to read, ignored
+            if not report_date:
+                report_date = find_date(text)
+            if "PREVAILING" in text.upper() or "PREVALING" in text.upper():
+                warn(f"page {number} looks like the 2025 layout (has a Prevailing column); "
+                     "use pdf_to_csv.py for those PDFs. Page skipped")
+                continue
+            if MARKET_PAGE_MARK in text:
+                commodities, rows = parse_market_page(page, text, lambda m: warn(f"page {number}: {m}"))
+                if not commodities:
+                    warn(f"page {number}: market table found but no header row, skipped")
+                    continue
+                names = []
+                for c in commodities:            # a leading '*' means "per piece"
+                    unit = "PHP/piece" if c.startswith("*") else "PHP/kg"
+                    names.append((c.lstrip("*").strip(), unit))
+                order.extend(n for n in names if n not in order)
+                for market, cells in rows:
+                    prices = markets.setdefault(market, {})
+                    for name, cell in zip(names, cells):
+                        prices[name] = parse_price(cell)
+            elif PROTEIN_PAGE_MARK in text.upper():
+                names, rows = parse_protein_page(text, lambda m: warn(f"page {number}: {m}"))
+                order.extend(n for n in names if n not in order)
+                protein.append((names, rows))
+            elif SUMMARY_PAGE_MARK in text:
+                srows.extend(parse_summary_page(page, lambda m: warn(f"page {number}: {m}")))
+            elif re.search(r"\d+\.\d\d", text):
+                warn(f"page {number}: layout not recognised, skipped")
+
+    known = list(markets)
+    unmatched = []
+    for names, rows in protein:
+        for market, cells in rows:
+            target = resolve_market(market, known)
+            if target is None:
+                if known and market not in unmatched:
+                    unmatched.append(market)
+                target = market
+            prices = markets.setdefault(target, {})
+            for name, cell in zip(names, cells):
+                prices[name] = parse_price(cell)
+    if unmatched:
+        warn(f"{len(unmatched)} market(s) on the pork/chicken pages are not in the main "
+             "table and were kept under their own names: " + "; ".join(unmatched) +
+             ". If one is the same market as a main-table market, add it to MARKET_ALIASES")
+
+    from_name = filename_date(pdf_path)
+    if report_date and from_name and report_date != from_name:
+        warn(f"date in the PDF ({report_date}) differs from the file name ({from_name}); "
+             "using the PDF's")
+    if not report_date and from_name:
+        warn(f"no date found in the PDF; using the file name's ({from_name})")
+        report_date = from_name
+    return report_date, order, markets, srows
+
+
+
+def unify_market_names(master_m):
+    """Give one name to each market across the whole year (combine mode).
+
+    A market can be spelt differently from day to day or page to page ("Agora Public
+    Market/San Juan" / "Agora Public Market"). Names are grouped with the same rule as
+    resolve_market (case, trailing "/Place" or "(Place)", MARKET_ALIASES); the group
+    uses its most common name that has a "/Place" or "(Place)", else its most common name.
+    Edits the rows in place. Returns [(final name, original name, rows)] for the report.
+    """
+    counts = {}
+    for _, rows in master_m:
+        for r in rows:
+            counts[r[1]] = counts.get(r[1], 0) + 1
+    groups = {}
+    for name in counts:
+        alias = MARKET_ALIASES.get(clean(name).lower(), name)
+        groups.setdefault(market_key(alias), []).append(name)
+    final = {}
+    for names in groups.values():
+        best = max(names, key=lambda n: (bool(re.search(r"[/(]", n)), counts[n]))
+        for n in names:
+            final[n] = best
+    for _, rows in master_m:
+        for r in rows:
+            r[1] = final[r[1]]
+    return sorted((final[n], n, counts[n]) for n in counts)
+
+# For writing
+def fmt(x):
+    return "" if x is None else f"{x:.2f}"
+
+
+def write_wide(path, report_date, order, markets):
+    header = ["date", "market"]
+    for name, unit in order:
+        header += [f"{name} Low ({unit})", f"{name} High ({unit})"]
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(header)
+        for market, prices in markets.items():
+            row = [report_date, market]
+            for key in order:
+                low, high = prices.get(key, (None, None))
+                row += [fmt(low), fmt(high)]
+            w.writerow(row)
+
+
+MARKET_LONG_HEADER = ["date", "market", "commodity", "unit", "price_low", "price_high"]
+
+
+def market_long_rows(report_date, order, markets):
+    for market, prices in markets.items():
+        for name, unit in order:
+            low, high = prices.get((name, unit), (None, None))
+            yield [report_date, market, name, unit, fmt(low), fmt(high)]
+
+
+SUMMARY_HEADER = ["date", "group", "commodity", "unit", "low", "high",
+                  "prevailing", "average"]
+
+
+def summary_csv_rows(report_date, srows):
+    for g, name, unit, low, high, prev, avg in srows:
+        yield [report_date, g, name, unit, fmt(low), fmt(high), fmt(prev), fmt(avg)]
+
+
+def write_rows(path, header, rows):
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(header)
+        w.writerows(rows)
+
