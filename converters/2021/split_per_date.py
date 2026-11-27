@@ -6,3 +6,7 @@ Writes: ncr_summary_per_date\\Price-Monitoring-<Month>-<D>-2021.csv
 import csv, os, re
 from collections import defaultdict
 
+def read(p):
+    with open(p, newline="", encoding="utf-8-sig") as f:
+        r = csv.DictReader(f); return r.fieldnames, list(r)
+
