@@ -702,3 +702,26 @@ def validate(df: pd.DataFrame):
     if df.groupby("market")["available"].sum().eq(0).any():
         problems.append("at least one market has no available prices at all")
     return problems
+
+
+# Command-line inspection: python parser.py file.pdf
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        sys.exit("usage: python parser.py file.pdf")
+    target = Path(sys.argv[1])
+    try:
+        frame = parse_market_page(target, strict=False, skip_images=True, raise_on_skip=True)
+    except SkippedImagePDFError as exc:
+        print(exc)
+        sys.exit(0)
+
+    print(f"date: {frame['date'].iloc[0]}")
+    print(
+        f"markets: {frame['market'].nunique()}  "
+        f"commodities: {frame['commodity'].nunique()}"
+    )
+    print(f"available cells: {int(frame['available'].sum())} of {len(frame)}")
+    problems = validate(frame)
+    print("validation:", "OK" if not problems else problems)
+    print(frame.head(25).to_string(index=False))
