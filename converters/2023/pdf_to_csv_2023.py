@@ -538,3 +538,245 @@ def write_rows(path, header, rows):
         w.writerow(header)
         w.writerows(rows)
 
+
+# Workers
+def work(job):
+    """Runs in a worker process. Never raises; returns a plain tuple."""
+    pdf, = job
+    warnings, info = [], {}
+    try:
+        report_date, order, markets, srows = convert(pdf, warnings.append, info)
+        if not markets and not srows:
+            with pdfplumber.open(pdf) as doc:    # only pictures: skip the file quietly
+                pictures_only = all(not (p.extract_text() or "").strip() and p.images
+                                    for p in doc.pages)
+            if pictures_only:
+                return pdf, report_date, order, markets, srows, warnings, None, info
+            raise ValueError("no price tables found")
+        return pdf, report_date, order, markets, srows, warnings, None, info
+    except Exception as e:
+        return pdf, "", [], {}, [], warnings, str(e), info
+
+
+def pause():
+    """Keep the window open when launched by drag-and-drop / double-click."""
+    if sys.platform == "win32" and sys.stdin and sys.stdin.isatty():
+        try:
+            input("\nPress Enter to close...")
+        except EOFError:
+            pass
+
+
+def find_pdfs(folder, recursive):
+    it = folder.rglob("*") if recursive else folder.iterdir()
+    return sorted(p for p in it if p.is_file() and p.suffix.lower() == ".pdf")
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("pdfs", nargs="*", help="one or more input PDF files")
+    ap.add_argument("-o", "--output", help="output CSV (only with a single PDF)")
+    ap.add_argument("--all", action="store_true",
+                    help="convert every PDF in the current folder")
+    ap.add_argument("--outdir", default=".",
+                    help="folder in which to create 'Per Market' and 'NCR Summary' "
+                         "(default: current folder)")
+    ap.add_argument("-r", "--recursive", action="store_true",
+                    help="with --all, also search subfolders")
+    ap.add_argument("--combine", action="store_true",
+                    help="write all_markets.csv and all_ncr_summary.csv (tidy format) "
+                         "instead of one pair of CSVs per PDF")
+    ap.add_argument("--also-individual", action="store_true",
+                    help="with --combine, also write the per-PDF CSVs")
+    ap.add_argument("--skip-existing", action="store_true",
+                    help="skip PDFs whose CSV already exists (per-file mode)")
+    ap.add_argument("-j", "--jobs", type=int, default=0,
+                    help="worker processes (default: all CPU cores)")
+    ap.add_argument("--no-summary", action="store_true",
+                    help="skip the NCR-wide Low/High data")
+    ap.add_argument("--long", action="store_true",
+                    help="per-file CSV in tidy format: one row per market + commodity")
+    args = ap.parse_args()
+
+    if not args.pdfs and not args.all:
+        # Double-clicked with nothing dropped: offer to convert the whole folder.
+        if sys.stdin and sys.stdin.isatty():
+            print("No files given. Drag PDFs onto this script, or convert them all.")
+            if input(f"Convert every PDF in {Path.cwd()}? [Y/n] ").strip().lower() in ("", "y", "yes"):
+                args.all = True
+        if not args.all:
+            pause()
+            return
+
+    if args.all:
+        found = find_pdfs(Path.cwd(), args.recursive)
+        args.pdfs = [str(p) for p in found] + args.pdfs
+        print(f"Found {len(found)} PDF(s) in {Path.cwd()}"
+              f"{' (including subfolders)' if args.recursive else ''}", file=sys.stderr)
+    if not args.pdfs:
+        print("No PDF files found.")
+        pause()
+        return
+    if args.output and len(args.pdfs) > 1:
+        sys.exit("-o/--output can only be used with a single PDF.")
+
+    outdir = Path(args.outdir)
+    market_dir, summary_dir = outdir / MARKET_DIR, outdir / SUMMARY_DIR
+
+    write_individual = (not args.combine) or args.also_individual
+    pdfs = list(dict.fromkeys(args.pdfs))
+    if args.skip_existing and write_individual and not args.combine:
+        keep = [p for p in pdfs if not (market_dir / (Path(p).stem + ".csv")).exists()]
+        print(f"Skipping {len(pdfs) - len(keep)} already converted", file=sys.stderr)
+        pdfs = keep
+
+    jobs = args.jobs or os.cpu_count() or 1
+    jobs = max(1, min(jobs, len(pdfs))) if pdfs else 1
+    start = time.time()
+    done, failed, errors = 0, 0, []
+    master_m, master_s = [], []                  # (sort_key, rows)
+    attention = []                               # (file, warning) where data was left out
+    picture_only = []                            # PDFs with nothing readable at all
+    file_log = []                                # one row per PDF, written to file_log.csv
+
+    def handle(res, n):
+        nonlocal done, failed
+        pdf, report_date, order, markets, srows, warnings, err, info = res
+        tag = f"[{n}/{len(pdfs)}] {Path(pdf).name}"
+        pics = info.get("picture_pages", [])
+        npages = info.get("pages", 0)
+        skipped_rows = sum(1 for w in warnings if re.search(r"skipped|not recognised", w))
+        if err:
+            kind = "failed"
+        elif npages and len(pics) == npages:
+            kind = "image only"
+        elif pics:
+            kind = "image and text"
+        else:
+            kind = "recorded"
+        file_log.append([report_date or filename_date(pdf), Path(pdf).name, kind, npages,
+                         ",".join(map(str, pics)), len(markets), len(srows), skipped_rows,
+                         err or ""])
+        if err:
+            failed += 1
+            errors.append((pdf, err))
+            print(f"{tag}  FAILED: {err}", file=sys.stderr)
+            return
+        if not markets and not srows:
+            print(f"{tag}  skipped (pictures only, nothing to read)", file=sys.stderr)
+            picture_only.append(Path(pdf).name)
+            return
+        for w in warnings:
+            print(f"{tag}  ! {w}", file=sys.stderr)
+            if re.search(r"skipped|not recognised", w):
+                attention.append((Path(pdf).name, w))
+        if write_individual:
+            out = Path(args.output) if args.output else market_dir / (Path(pdf).stem + ".csv")
+            out.parent.mkdir(parents=True, exist_ok=True)
+            if args.long:
+                write_rows(out, MARKET_LONG_HEADER,
+                           market_long_rows(report_date, order, markets))
+            else:
+                write_wide(out, report_date, order, markets)
+            if srows and not args.no_summary:
+                summary_dir.mkdir(parents=True, exist_ok=True)
+                sout = summary_dir / (Path(pdf).stem + "_ncr_summary.csv")
+                write_rows(sout, SUMMARY_HEADER, summary_csv_rows(report_date, srows))
+        if args.combine:
+            key = (report_date, Path(pdf).name)
+            src = Path(pdf).name
+            master_m.append((key, [r + [src] for r in
+                                   market_long_rows(report_date, order, markets)]))
+            if srows and not args.no_summary:
+                master_s.append((key, [r + [src] for r in
+                                       summary_csv_rows(report_date, srows)]))
+        done += 1
+        print(f"{tag}  ok ({len(markets)} markets, {len(srows)} summary rows)",
+              file=sys.stderr)
+
+    if jobs == 1:
+        for n, pdf in enumerate(pdfs, 1):
+            handle(work((pdf,)), n)
+    else:
+        print(f"Using {jobs} worker processes", file=sys.stderr)
+        with ProcessPoolExecutor(max_workers=jobs) as ex:
+            futs = [ex.submit(work, (p,)) for p in pdfs]
+            for n, fut in enumerate(as_completed(futs), 1):
+                handle(fut.result(), n)
+
+    if args.combine and (master_m or master_s):
+        if master_m:
+            master_m.sort(key=lambda x: x[0])
+            market_dir.mkdir(parents=True, exist_ok=True)
+            report = unify_market_names(master_m)
+            write_rows(market_dir / "market_names.csv",
+                       ["market_in_all_markets_csv", "name_as_printed_in_pdf", "rows"], report)
+            merged = sorted({f for f, o, _ in report if any(f2 == f and o2 != f for f2, o2, _ in report)})
+            print(f"{len({f for f, _, _ in report})} distinct markets; names that were merged: "
+                  f"{', '.join(merged) if merged else 'none'} (see market_names.csv)", file=sys.stderr)
+            target = market_dir / "all_markets.csv"
+            write_rows(target, MARKET_LONG_HEADER + ["source_file"],
+                       (r for _, rows in master_m for r in rows))
+            print(f"Wrote {target}", file=sys.stderr)
+        if master_s:
+            master_s.sort(key=lambda x: x[0])
+            summary_dir.mkdir(parents=True, exist_ok=True)
+            target = summary_dir / "all_ncr_summary.csv"
+            write_rows(target, SUMMARY_HEADER + ["source_file"],
+                       (r for _, rows in master_s for r in rows))
+            print(f"Wrote {target}", file=sys.stderr)
+
+    if attention:
+        outdir.mkdir(parents=True, exist_ok=True)
+        attention.sort()
+        write_rows(outdir / "needs_attention.csv", ["file", "what_is_missing"], attention)
+        print(f"{len({f for f, _ in attention})} file(s) had rows or pages left out; "
+              "listed in needs_attention.csv", file=sys.stderr)
+    if file_log:
+        dl = {}                                  # status from download_log.csv, if the
+        dlog = outdir / "download_log.csv"       # downloader was used
+        if dlog.exists():
+            with open(dlog, newline="", encoding="utf-8-sig") as f:
+                dl = {r["saved_as"]: r for r in csv.DictReader(f)}
+        have = {r[1] for r in file_log}
+        for r in file_log:
+            r.insert(2, dl.get(r[1], {}).get("status", ""))
+        for name, r in dl.items():               # listed for download but no PDF here
+            if name not in have:
+                file_log.append([r["date"], name, r["status"], "no record", 0, "", 0, 0, 0, ""])
+        file_log.sort(key=lambda r: (r[0], r[1]))
+        outdir.mkdir(parents=True, exist_ok=True)
+        write_rows(outdir / "file_log.csv",
+                   ["date", "file", "download", "pdf_type", "pages", "picture_pages",
+                    "markets", "summary_rows", "rows_skipped", "error"], file_log)
+        print("Wrote file_log.csv (one line per PDF: download, text/image, rows skipped)",
+              file=sys.stderr)
+    if attention or picture_only or errors:
+        rows_skipped = sum(1 for _, w in attention if "skipped" in w and "layout" not in w)
+        pages_skipped = len(attention) - rows_skipped
+        lines = ["Skipped / ignored", "================================",
+                 f"PDFs converted:                 {done}",
+                 f"PDFs with only pictures (empty): {len(picture_only)}",
+                 f"PDFs that failed:               {failed}",
+                 f"Rows skipped (typo or unreadable in the PDF): {rows_skipped}",
+                 f"Pages not recognised:           {pages_skipped}",
+                 "", "Details: needs_attention.csv (rows/pages), conversion_errors.csv (failures)."]
+        if picture_only:
+            lines += ["", "Picture-only PDFs:"] + [f"  {n}" for n in sorted(picture_only)]
+        outdir.mkdir(parents=True, exist_ok=True)
+        (outdir / "skip_summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print("\n".join(lines[:8]), file=sys.stderr)
+    if errors:
+        outdir.mkdir(parents=True, exist_ok=True)
+        write_rows(outdir / "conversion_errors.csv", ["file", "error"], errors)
+        print(f"{failed} file(s) failed; listed in conversion_errors.csv", file=sys.stderr)
+
+    print(f"\nDone: {done} converted, {failed} failed in {time.time() - start:.1f}s.",
+          file=sys.stderr)
+    pause()
+    sys.exit(1 if failed else 0)
+
+
+if __name__ == "__main__":
+    main()
+
