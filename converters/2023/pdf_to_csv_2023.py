@@ -42,3 +42,51 @@ PROTEIN_PAGE_MARK = "PRICE PER KILOGRAM"    # the per-market pork and chicken pa
 SUMMARY_PAGE_MARK = "at NCR Markets"        # the one-page NCR-wide infographic
 MARKET_DIR = "Per Market"                   # output folder names
 SUMMARY_DIR = "NCR Summary"
+
+# For parsing
+def clean(s):
+    return re.sub(r"\s+", " ", s or "").strip()
+
+
+def parse_date(raw):
+    for f in ("%d %B %Y", "%B %d %Y", "%d %b %Y", "%b %d %Y"):
+        try:
+            return datetime.strptime(raw, f).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return None
+
+
+def find_date(text):
+    m = DATE_RE.search(text)
+    if not m:
+        return ""
+    raw = (f"{m['d1']} {m['m1']} {m['y1']}" if m["d1"]
+           else f"{m['m2']} {m['d2']} {m['y2']}")
+    return parse_date(raw) or raw
+
+
+def filename_date(path):
+    """'Price-Monitoring-December-26-2023.pdf' -> '2023-12-26' (or '')."""
+    m = FILE_DATE_RE.search(Path(path).stem)
+    return (parse_date(f"{m[1]} {m[2]} {m[3]}") or "") if m else ""
+
+
+def fix_line(line):
+    """Un-glue cells that the PDF text runs together: 'NOT AVAILABLE110.00 -120.00',
+    'NOT AVAILABLENOT AVAILABLE', '0.00n/m0.00'."""
+    line = re.sub(r"(?<=[A-Za-z0-9])(?=NOT\s+AVAIL)", " ", line)
+    line = re.sub(r"(AVAIL[A-Z]*)(?=\d)", r"\1 ", line)
+    line = re.sub(r"(?<=\d)(?=n/m|N/A)", " ", line)
+    line = re.sub(r"(?<=n/m)(?=\d)|(?<=N/A)(?=\d)", " ", line)
+    return line
+
+
+def parse_price(cell):
+    """'45.00 - 47.00' -> (45.0, 47.0); '45.00' -> (45.0, 45.0); N/A, n/m -> (None, None)."""
+    nums = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", clean(cell))]
+    if not nums:
+        return None, None
+    return (nums[0], nums[0]) if len(nums) == 1 else (min(nums), max(nums))
+
+
