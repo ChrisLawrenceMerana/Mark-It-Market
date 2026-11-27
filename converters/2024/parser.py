@@ -25,9 +25,7 @@ from pathlib import Path
 import pandas as pd
 import pdfplumber
 
-# --------------------------------------------------------------------------
 # Settings
-# --------------------------------------------------------------------------
 
 EXPECTED_MARKETS: int | None = None
 MIN_READABLE_CHARS = 15
@@ -159,3 +157,59 @@ class ParseError(Exception):
 
 class SkippedImagePDFError(ParseError):
     """Raised when a PDF has no readable/selectable text and appears to be an image."""
+
+# Small helpers
+
+def _xc(w) -> float:
+    return (w["x0"] + w["x1"]) / 2
+
+
+def _yc(w) -> float:
+    return (w["top"] + w["bottom"]) / 2
+
+
+def is_image_only_pdf(
+    pdf,
+    page=None,
+    min_chars: int = MIN_READABLE_CHARS,
+) -> bool:
+    """
+    Return True if the target page (or entire PDF when page is None) has no
+    meaningful readable/selectable text layer.
+    """
+    pages = [page] if page is not None else list(pdf.pages)
+    if not pages:
+        return True
+
+    total_non_ws_chars = 0
+    for p in pages:
+        txt = re.sub(r"\s+", "", p.extract_text() or "")
+        total_non_ws_chars += len(txt)
+
+    return total_non_ws_chars < min_chars
+
+
+def has_market_grid(pdf) -> bool:
+    """Return True if the PDF appears to contain a per-market price grid."""
+    for page in pdf.pages:
+        up = re.sub(r"\s+", " ", (page.extract_text() or "")).upper()
+        if "PER MARKET" in up or ("BALINTAWAK" in up and "QUINTA" in up):
+            return True
+    return False
+
+
+def _empty_market_df() -> pd.DataFrame:
+    df = pd.DataFrame(columns=MARKET_COLUMNS)
+    df["price_min"] = pd.to_numeric(df["price_min"])
+    df["price_max"] = pd.to_numeric(df["price_max"])
+    df["available"] = df["available"].astype(bool)
+    return df
+
+
+def _empty_summary_df() -> pd.DataFrame:
+    df = pd.DataFrame(columns=SUMMARY_COLUMNS)
+    for col in ("low", "high", "prevailing", "average"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df["market_count"] = df["market_count"].astype(int)
+    return df
+
