@@ -213,3 +213,72 @@ def _empty_summary_df() -> pd.DataFrame:
     df["market_count"] = df["market_count"].astype(int)
     return df
 
+
+def _split_merged_words(words):
+    """Split wide spans containing multiple price ranges or status tokens."""
+    expanded = []
+    for w in words:
+        txt = w["text"].strip()
+        matches = list(RANGE_OR_STATUS_RE.finditer(txt))
+        if len(matches) <= 1 or w["x0"] < 115:
+            expanded.append(w)
+            continue
+
+        total_len = max(len(txt), 1)
+        span_w = max(w["x1"] - w["x0"], 1.0)
+        for m in matches:
+            part = m.group(0).strip()
+            if not part:
+                continue
+            s_frac = m.start() / total_len
+            e_frac = m.end() / total_len
+            nw = dict(w)
+            nw["text"] = part
+            nw["x0"] = w["x0"] + s_frac * span_w
+            nw["x1"] = w["x0"] + e_frac * span_w
+            expanded.append(nw)
+    return expanded
+
+
+def _empty_market_fallback(report_date) -> pd.DataFrame:
+    """Return placeholder rows when a PDF lacks a per-market grid."""
+    rows = [
+        {
+            "date": report_date,
+            "market": None,
+            "city": None,
+            "commodity": commodity,
+            "unit": unit,
+            "price_min": math.nan,
+            "price_max": math.nan,
+            "available": False,
+        }
+        for commodity, unit, _keys, _group in COMMODITIES
+    ]
+    df = pd.DataFrame(rows, columns=MARKET_COLUMNS)
+    df["price_min"] = pd.to_numeric(df["price_min"])
+    df["price_max"] = pd.to_numeric(df["price_max"])
+    return df
+
+
+def parse_cell(text: str):
+    """Return (price_min, price_max, status); status is ok / na / blank / bad."""
+    t = text.strip()
+    if not t:
+        return None, None, "blank"
+    upper = t.upper()
+    if "AVAIL" in upper or "TAVAIL" in upper:
+        return None, None, "na"
+    nums = [float(n.replace(",", "")) for n in NUMBER_RE.findall(t)]
+    if not nums:
+        return None, None, "bad"
+    return min(nums), max(nums), "ok"
+
+
+def split_market(raw: str):
+    """'Maypajo Public Market/Caloocan' -> ('Maypajo Public Market', 'Caloocan')."""
+    raw = re.sub(r"\s+", " ", raw).strip()
+    if "/" in raw:
+        market, city = raw.split("/", 1)
+        return market.strip(), city.strip() or None
+    return raw, None
