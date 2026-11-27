@@ -345,3 +345,101 @@ def read_date(pdf, primary_page, pdf_path: Path | None = None):
                 pass
 
     raise ParseError("Could not find the report date in the PDF.")
+
+
+def find_table_bounds(page, words):
+    """Return (header_top, header_bottom, table_bottom) as y-coordinates."""
+    banner_limit = page.height * 0.20
+    banner = [
+        w for w in words
+        if w["top"] < banner_limit
+        and (
+            "PHP/KG" in w["text"].upper()
+            or "COMMODITY" in w["text"].upper()
+            or "PER MARKET" in re.sub(r"\s+", " ", w["text"]).upper()
+        )
+    ]
+    header_top = max(w["bottom"] for w in banner) if banner else 0.0
+
+    sources = [
+        w["top"] for w in words
+        if w["text"].startswith("Source") and w["top"] > header_top
+    ]
+    table_bottom = min(sources) if sources else page.height
+
+    def _is_body_marker(txt: str) -> bool:
+        up = txt.upper()
+        return (
+            bool(re.search(r"\d", txt))
+            or "AVAIL" in up
+            or "TAVAIL" in up
+            or up in ("NOT", "N/A")
+        )
+
+    body_tops = [
+        w["top"] for w in words
+        if header_top <= w["top"] < table_bottom and _is_body_marker(w["text"])
+    ]
+
+    if not body_tops and header_top > 0:
+        header_top = 0.0
+        body_tops = [
+            w["top"] for w in words
+            if 0.0 <= w["top"] < table_bottom and _is_body_marker(w["text"])
+        ]
+
+    if not body_tops:
+        return header_top, header_top, table_bottom
+
+    return header_top, min(body_tops) - 0.5, table_bottom
+
+
+def _anchor_bands(words, expected: int):
+    """Fallback vertical bands anchored around known column x-centers if gap clustering differs."""
+    default_centers = [
+        75.0, 136.0, 171.0, 206.0, 242.0, 277.0, 310.0, 345.0, 381.0, 415.0,
+        449.0, 483.0, 520.0, 558.0, 598.0, 636.0, 675.0, 715.0, 755.0, 795.0,
+    ][:expected]
+    bands = []
+    for idx, cx in enumerate(default_centers):
+        half_w = 24.0 if idx == 0 else 15.0
+        bands.append([cx - half_w, cx + half_w])
+    return bands
+
+
+def cluster_columns(words, expected, strict: bool = True):
+    spans = sorted((w["x0"], w["x1"]) for w in words)
+    seen = {}
+    for tol in GAP_TOLERANCES:
+        clusters = []
+        for x0, x1 in spans:
+            if clusters and x0 <= clusters[-1][1] + tol:
+                clusters[-1][1] = max(clusters[-1][1], x1)
+            else:
+                clusters.append([x0, x1])
+        seen[tol] = len(clusters)
+        if len(clusters) == expected:
+            return clusters
+
+    if not strict:
+        return _anchor_bands(words, expected)
+
+    raise ParseError(
+        f"Expected {expected} columns (market name + {expected - 1} commodities) "
+        f"but found these counts for each gap tolerance tried: {seen}. "
+        "Run `python parser.py file.pdf` to inspect."
+    )
+
+
+def group_lines(words):
+    if not words:
+        return []
+    tol = 0.5 * statistics.median(w["bottom"] - w["top"] for w in words)
+    lines = []
+    for w in sorted(words, key=_yc):
+        if lines and abs(_yc(w) - lines[-1]["y"]) <= tol:
+            lines[-1]["words"].append(w)
+            lines[-1]["y"] = statistics.mean(_yc(x) for x in lines[-1]["words"])
+        else:
+            lines.append({"y": _yc(w), "words": [w]})
+    return lines
