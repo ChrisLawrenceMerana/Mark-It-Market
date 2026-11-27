@@ -13,6 +13,15 @@ import pdfplumber
 
 NA = "NOT AVAILABLE"
 
+TOKEN = rf"(?:{NA}|\d+(?:\.\d+)?(?:\s*-\s*\d+(?:\.\d+)?)?)"
+ROW_RE = re.compile(rf"^(?P<market>.+?)\s+(?P<values>{TOKEN}(?:\s+{TOKEN})*)\s*$")
+TOKEN_RE = re.compile(TOKEN)
+
+DATE_RE = re.compile(
+    r"(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s+"
+    r"(\d{1,2}\s+\w+\s+\d{4})"
+)
+
 MARKET_DIR = "Per Market"
 SUMMARY_DIR = "NCR Summary"
 
@@ -81,3 +90,13 @@ def find_report_date(text):
                 continue
 
     return min(found)[1] if found else ""
+
+def has_date(line):
+    """True for the heading line that carries the report date."""
+    return bool(DATE_RE.search(line) or find_report_date(line))
+
+def iso_date(raw):
+    try:
+        return datetime.strptime(raw, "%d %B %Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return raw
