@@ -12,14 +12,22 @@ Drag PDFs onto this file, or from a terminal:
     python pdf_to_csv.py input.pdf -o prices.csv   # single file only
     python pdf_to_csv.py input.pdf --long       # one row per market+commodity
 
+Bulk mode (years of data): parallel, recursive, one combined file
+    python pdf_to_csv.py --all -r --combine
+creates Per Market/all_markets.csv and NCR Summary/all_ncr_summary.csv (tidy
+format, ISO dates, sorted by date) instead of thousands of small CSVs. Add --also-individual to keep the
+per-file CSVs too. --jobs N sets the number of worker processes.
+
 Requires:  pip install pdfplumber
 """
 
 import argparse
 import csv
+import os
 import re
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -449,6 +457,15 @@ def main():
                          "(default: current folder)")
     ap.add_argument("-r", "--recursive", action="store_true",
                     help="with --all, also search subfolders")
+    ap.add_argument("--combine", action="store_true",
+                    help="write all_markets.csv and all_ncr_summary.csv (tidy format) "
+                         "instead of one pair of CSVs per PDF")
+    ap.add_argument("--also-individual", action="store_true",
+                    help="with --combine, also write the per-PDF CSVs")
+    ap.add_argument("--skip-existing", action="store_true",
+                    help="skip PDFs whose CSV already exists (per-file mode)")
+    ap.add_argument("-j", "--jobs", type=int, default=0,
+                    help="worker processes (default: all CPU cores)")
     ap.add_argument("--trust-text", action="store_true",
                     help="parse the text of full-page scans anyway (normally skipped as unreliable)")
     ap.add_argument("--no-summary", action="store_true",
@@ -479,13 +496,23 @@ def main():
     if args.output and len(args.pdfs) > 1:
         sys.exit("-o/--output can only be used with a single PDF.")
 
+    skipped_names = []
     outdir = Path(args.outdir)
     market_dir, summary_dir = outdir / MARKET_DIR, outdir / SUMMARY_DIR
 
+    write_individual = (not args.combine) or args.also_individual
     pdfs = list(dict.fromkeys(args.pdfs))
+    if args.skip_existing and write_individual and not args.combine:
+        keep = [p for p in pdfs if not (market_dir / (Path(p).stem + ".csv")).exists()]
+        print(f"Skipping {len(pdfs) - len(keep)} already converted", file=sys.stderr)
+        skipped_names = [Path(p).name for p in pdfs if p not in keep]
+        pdfs = keep
 
+    jobs = args.jobs or os.cpu_count() or 1
+    jobs = max(1, min(jobs, len(pdfs)))
     start = time.time()
     done, failed, errors = 0, 0, []
+    master_m, master_s = [], []                  # (sort_key, rows)
 
     def handle(res, n):
         nonlocal done, failed
@@ -498,23 +525,61 @@ def main():
             return
         for w in warnings:
             print(f"{tag}  ! {w}", file=sys.stderr)
-        out = Path(args.output) if args.output else market_dir / (Path(pdf).stem + ".csv")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        if args.long:
-            write_rows(out, MARKET_LONG_HEADER,
-                       market_long_rows(report_date, order, markets))
-        else:
-            write_wide(out, report_date, order, markets)
-        if srows and not args.no_summary:
-            summary_dir.mkdir(parents=True, exist_ok=True)
-            sout = summary_dir / (Path(pdf).stem + "_ncr_summary.csv")
-            write_rows(sout, SUMMARY_HEADER, summary_csv_rows(report_date, srows))
+        if write_individual:
+            out = Path(args.output) if args.output else market_dir / (Path(pdf).stem + ".csv")
+            out.parent.mkdir(parents=True, exist_ok=True)
+            if args.long:
+                write_rows(out, MARKET_LONG_HEADER,
+                           market_long_rows(report_date, order, markets))
+            else:
+                write_wide(out, report_date, order, markets)
+            if srows and not args.no_summary:
+                summary_dir.mkdir(parents=True, exist_ok=True)
+                sout = summary_dir / (Path(pdf).stem + "_ncr_summary.csv")
+                write_rows(sout, SUMMARY_HEADER, summary_csv_rows(report_date, srows))
+        if args.combine:
+            key = (report_date, Path(pdf).name)
+            src = Path(pdf).name
+            master_m.append((key, [r + [src] for r in
+                                   market_long_rows(report_date, order, markets)]))
+            if srows and not args.no_summary:
+                master_s.append((key, [r + [src] for r in
+                                       summary_csv_rows(report_date, srows)]))
         done += 1
         print(f"{tag}  ok ({len(markets)} markets, {len(srows)} summary rows)",
               file=sys.stderr)
 
-    for n, pdf in enumerate(pdfs, 1):
-        handle(work((pdf, args.trust_text)), n)
+    if jobs == 1:
+        for n, pdf in enumerate(pdfs, 1):
+            handle(work((pdf, args.trust_text)), n)
+    else:
+        print(f"Using {jobs} worker processes", file=sys.stderr)
+        with ProcessPoolExecutor(max_workers=jobs) as ex:
+            futs = [ex.submit(work, (p, args.trust_text)) for p in pdfs]
+            for n, fut in enumerate(as_completed(futs), 1):
+                handle(fut.result(), n)
+
+    if args.combine and (master_m or master_s):
+        if master_m:
+            master_m.sort(key=lambda x: x[0])
+            market_dir.mkdir(parents=True, exist_ok=True)
+            target = market_dir / "all_markets.csv"
+            write_rows(target, MARKET_LONG_HEADER + ["source_file"],
+                       (r for _, rows in master_m for r in rows))
+            print(f"Wrote {target}", file=sys.stderr)
+        if master_s:
+            master_s.sort(key=lambda x: x[0])
+            summary_dir.mkdir(parents=True, exist_ok=True)
+            target = summary_dir / "all_ncr_summary.csv"
+            write_rows(target, SUMMARY_HEADER + ["source_file"],
+                       (r for _, rows in master_s for r in rows))
+            print(f"Wrote {target}", file=sys.stderr)
+
+    if errors:
+        outdir.mkdir(parents=True, exist_ok=True)
+        write_rows(outdir / "conversion_errors.csv", ["file", "error"], errors)
+        print(f"{failed} file(s) failed; listed in conversion_errors.csv", file=sys.stderr)
+
 
     print(f"\nDone: {done} converted, {failed} failed in {time.time() - start:.1f}s.",
           file=sys.stderr)
