@@ -157,3 +157,24 @@ def parse_summary(text, notes):
 
 # ----------------------------------------------------------------------------------------
 # 2. PER-MARKET PAGE
+# ----------------------------------------------------------------------------------------
+# (output commodity name, unit, header keywords)
+COLUMNS = [
+    ("Well-milled Rice (Local)", "PHP/kg", ["well-milled"]),
+    ("Tilapia", "PHP/kg", ["tilapia"]),
+    ("Galunggong (Local)", "PHP/kg", ["galunggong"]),
+    ("Fresh Whole Chicken", "PHP/kg", ["chicken"]),
+    ("Egg (Medium)", "PHP/piece", ["egg", "itlog"]),
+    ("Ampalaya", "PHP/kg", ["ampalaya"]),
+    ("Tomato", "PHP/kg", ["tomato"]),
+    ("Cabbage", "PHP/kg", ["cabbage"]),
+    ("Pechay Baguio", "PHP/kg", ["pechay"]),
+    ("Red Onion (Local)", "PHP/kg", ["onion"]),
+]
+MARKET_FIELDS = ["date", "market", "commodity", "unit", "price_low", "price_high", "source_file"]
+
+
+def clean_word(t):
+    return re.sub(r"[()*]", "", t).lower()
+
+
