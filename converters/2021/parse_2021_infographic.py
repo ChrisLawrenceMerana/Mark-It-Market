@@ -89,3 +89,20 @@ YELLOW = [
 LAYOUTS = {"green": GREEN, "yellow": YELLOW}
 
 
+# ---- words: text layer or OCR ----------------------------------------------------------------
+def find_tesseract():
+    import pytesseract
+    for p in (r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+              r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"):
+        if os.path.exists(p):
+            pytesseract.pytesseract.tesseract_cmd = p
+            break
+    return pytesseract
+
+
+def text_words(page):
+    s = RENDER_WIDTH / float(page.width)
+    return [dict(text=w["text"], x0=w["x0"] * s, x1=w["x1"] * s, top=w["top"] * s, bottom=w["bottom"] * s)
+            for w in page.extract_words()]
+
+
