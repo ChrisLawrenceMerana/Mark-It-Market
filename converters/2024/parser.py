@@ -282,3 +282,66 @@ def split_market(raw: str):
         market, city = raw.split("/", 1)
         return market.strip(), city.strip() or None
     return raw, None
+
+
+# Locating things on the page
+
+def find_grid_page(pdf):
+    """Find the per-market grid page ('PER MARKET' or page 2 if present)."""
+    for page in pdf.pages:
+        txt = re.sub(r"\s+", " ", (page.extract_text() or "")).upper()
+        if "PER MARKET" in txt or ("BALINTAWAK" in txt and "QUINTA" in txt):
+            return page
+    if len(pdf.pages) >= 2:
+        return pdf.pages[1]
+    raise ParseError("Could not find the per-market grid page.")
+
+
+def find_summary_page(pdf):
+    """Find the NCR summary page ('AT NCR MARKETS' or 'PREVAILING', falling back to page 1)."""
+    for page in pdf.pages:
+        txt = re.sub(r"\s+", " ", (page.extract_text() or "")).upper()
+        if "AT NCR MARKETS" in txt or "PREVAILING" in txt or "NCR MARKETS" in txt:
+            return page
+    if pdf.pages:
+        return pdf.pages[0]
+    raise ParseError("Could not find the NCR summary page.")
+
+
+def read_date(pdf, primary_page, pdf_path: Path | None = None):
+    pages_to_check = [primary_page] + [p for p in pdf.pages if p != primary_page]
+    for page in pages_to_check:
+        cleaned = re.sub(r"\s+", " ", page.extract_text() or "")
+
+        m = DATE_RE.search(cleaned)
+        if m:
+            month, day, year = m.groups()
+            try:
+                return datetime.strptime(
+                    f"{month.capitalize()} {int(day)} {year}", "%B %d %Y"
+                ).date()
+            except ValueError:
+                pass
+
+        dm = DAY_MONTH_DATE_RE.search(cleaned)
+        if dm:
+            day, month, year = dm.groups()
+            try:
+                return datetime.strptime(
+                    f"{int(day)} {month.capitalize()} {year}", "%d %B %Y"
+                ).date()
+            except ValueError:
+                pass
+
+    if pdf_path is not None:
+        fm = FILENAME_DATE_RE.search(pdf_path.stem)
+        if fm:
+            month, day, year = fm.groups()
+            try:
+                return datetime.strptime(
+                    f"{month.capitalize()} {int(day)} {year}", "%B %d %Y"
+                ).date()
+            except ValueError:
+                pass
+
+    raise ParseError("Could not find the report date in the PDF.")
