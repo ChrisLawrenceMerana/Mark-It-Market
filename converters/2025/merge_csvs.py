@@ -16,13 +16,15 @@ tidy format automatically.
                                           # its "Per Market" and "NCR Summary" folders
     python merge_csvs.py a/*.csv b/*.csv  # or give specific files / wildcards
 
-Rows are sorted by date and exact duplicate rows are removed.
+Rows are sorted by date and exact duplicate rows are removed. A blank date is filled in from the file name
+(e.g. Price-Monitoring-April-1-2025.csv).
 """
 import argparse
 import csv
 import glob
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 MARKETS_HEADER = ["date", "market", "commodity", "unit", "price_low", "price_high",
@@ -33,6 +35,50 @@ SUMMARY_HEADER = ["date", "group", "commodity", "unit", "low", "high", "prevaili
 OUTPUTS = {"markets": "merged_markets.csv", "summary": "merged_ncr_summary.csv"}
 IGNORE = set(OUTPUTS.values()) | {"conversion_errors.csv", "coverage.csv", "coverage_log.csv"}
 WIDE_COL = re.compile(r"^(?P<name>.+) (?P<end>Low|High) \((?P<unit>[^)]+)\)$")
+OLD_DATE = re.compile(r"(?:\w+,\s*)?(\d{1,2}\s+\w+\s+\d{4})")
+
+
+# Same file-name date finder as pdf_to_csv.py: used to fill in a blank date.
+MONTHS = ("january february march april may june july august september october "
+          "november december").split()
+_MONTH_RE = "|".join(m[:3] + r"[a-z]*" for m in MONTHS)
+FNAME_DATE_PATTERNS = [
+    (re.compile(r"(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})"), "ymd_num"),
+    (re.compile(rf"({_MONTH_RE})[\s_.,-]*(\d{{1,2}})[\s_.,-]+(\d{{4}})", re.I), "mdy"),
+    (re.compile(rf"(\d{{1,2}})[\s_.,-]*({_MONTH_RE})[\s_.,-]*(\d{{4}})", re.I), "dmy"),
+]
+
+
+def filename_date(path):
+    """Best-effort date from a file name like 'Price-Monitoring-December-24-2025.pdf'."""
+    name = Path(path).stem
+    for rx, kind in FNAME_DATE_PATTERNS:
+        m = rx.search(name)
+        if not m:
+            continue
+        try:
+            if kind == "ymd_num":
+                y, mo, d = (int(x) for x in m.groups())
+            else:
+                a, b, c = m.groups()
+                mon, day, y = (a, b, c) if kind == "mdy" else (b, a, c)
+                mo = [x[:3] for x in MONTHS].index(mon[:3].lower()) + 1
+                d, y = int(day), int(y)
+            return datetime(y, mo, d).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return ""
+
+
+def iso(value):
+    """'Wednesday, 24 December 2025' -> '2025-12-24'; anything else unchanged."""
+    m = OLD_DATE.fullmatch(value.strip())
+    if m:
+        try:
+            return datetime.strptime(m.group(1), "%d %B %Y").strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return value
 
 
 def read_file(path):
@@ -59,7 +105,7 @@ def read_file(path):
         rows = []
         for row in body:
             for (name, unit), idx in pairs.items():
-                rows.append([row[0], row[1], name, unit,
+                rows.append([iso(row[0]) or filename_date(src), row[1], name, unit,
                              row[idx["Low"]], row[idx["High"]], src])
         return "markets", rows
 
@@ -79,7 +125,7 @@ def read_file(path):
     for row in body:
         row = row + [""] * (len(want) - len(row))
         source = row[len(want)] if len(row) > len(want) and row[len(want)] else src
-        out = [row[0]] + row[1:len(want)] + [source]
+        out = [iso(row[0]) or filename_date(source)] + row[1:len(want)] + [source]
         rows.append(out)
     return kind, rows
 
