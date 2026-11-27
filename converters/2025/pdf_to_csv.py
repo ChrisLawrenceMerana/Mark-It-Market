@@ -12,6 +12,12 @@ Drag PDFs onto this file, or from a terminal:
     python pdf_to_csv.py input.pdf -o prices.csv   # single file only
     python pdf_to_csv.py input.pdf --long       # one row per market+commodity
 
+Coverage: coverage.csv lists every date from the first to the last found with its
+status: has record / image and text / image only / no record (no record also covers
+dates with no PDF at all). It is updated cumulatively after every run, using a small
+log (coverage_log.csv) of every PDF converted so far; --reset-coverage starts over. Dates for image-only PDFs come
+from the file name (e.g. Price-Monitoring-December-24-2025.pdf).
+
 Bulk mode (years of data): parallel, recursive, one combined file
     python pdf_to_csv.py --all -r --combine
 creates Per Market/all_markets.csv and NCR Summary/all_ncr_summary.csv (tidy
@@ -28,7 +34,7 @@ import re
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 try:
@@ -403,6 +409,64 @@ def filename_date(path):
     return ""
 
 
+STATUS_RANK = {"has record": 0, "image and text": 1, "image only": 2, "no record": 3}
+
+
+def classify(err, info):
+    """-> (status, detail) for the coverage record."""
+    info = info or {}
+    pages = info.get("total_pages", 0)
+    if err:
+        if info.get("text_pages", 0) == 0 and info.get("image_pages", 0) > 0:
+            why = "scans with unreliable OCR text" if info.get("scanned_pages") else "images; needs OCR"
+        return "image only", f"all {pages} page(s) are {why}"
+        return "no record", err
+    if info.get("image_pages", 0) > 0:
+        nums = ", ".join(map(str, info.get("image_page_numbers", [])))
+        return "image and text", f"image-only page(s) {nums} skipped; their data is missing"
+    notes = []
+    if info.get("blank_pages"):
+        notes.append(f"{info['blank_pages']} blank page(s)")
+    if info.get("unrecognised_pages"):
+        nums = ", ".join(map(str, info["unrecognised_pages"]))
+        notes.append(f"page(s) {nums} not recognised (different layout); their data is missing")
+    return "has record", "; ".join(notes)
+
+
+def write_coverage(path, records, date_from, date_to):
+    """records: list of (date_iso or '', status, filename, detail). One row per date."""
+    by_date, undated = {}, []
+    for d, status, fname, detail in records:
+        (by_date.setdefault(d, []) if d else undated).append((status, fname, detail))
+    known = sorted(by_date)
+    start = date_from or (known[0] if known else "")
+    end = date_to or (known[-1] if known else "")
+    rows, counts = [], {k: 0 for k in STATUS_RANK}
+    if start and end:
+        day = datetime.strptime(start, "%Y-%m-%d")
+        last = datetime.strptime(end, "%Y-%m-%d")
+        while day <= last:
+            d = day.strftime("%Y-%m-%d")
+            items = by_date.get(d)
+            if items:
+                best = min(items, key=lambda x: STATUS_RANK[x[0]])[0]
+                files = "; ".join(i[1] for i in items)
+                details = "; ".join(i[2] for i in items if i[2])
+                if len(items) > 1:
+                    details = (f"{len(items)} PDFs for this date. " + details).strip()
+            else:
+                best, files, details = "no record", "", "no PDF found for this date"
+            counts[best] += 1
+            rows.append([d, day.strftime("%A"), best, files, details])
+            day += timedelta(days=1)
+    for status, fname, detail in undated:
+        counts[status] += 1
+        rows.append(["", "", status, fname,
+                     ("date could not be determined. " + detail).strip()])
+    write_rows(path, ["date", "weekday", "status", "files", "details"], rows)
+    return counts
+
+
 def resolve_date(pdf, text_date, warnings):
     """Date from the PDF text, else from the file name. Warns if they disagree."""
     fn = filename_date(pdf)
@@ -472,6 +536,15 @@ def main():
                     help="skip the NCR-wide Low/High/Prevailing/Average data")
     ap.add_argument("--long", action="store_true",
                     help="per-file CSV in tidy format: one row per market + commodity")
+    ap.add_argument("--coverage", action="store_true", help=argparse.SUPPRESS)  # old, now default
+    ap.add_argument("--no-coverage", action="store_true",
+                    help="do not update coverage.csv")
+    ap.add_argument("--reset-coverage", action="store_true",
+                    help="forget earlier runs and build coverage.csv from this run only")
+    ap.add_argument("--from", dest="date_from", metavar="YYYY-MM-DD",
+                    help="first date to list in coverage.csv (default: earliest found)")
+    ap.add_argument("--to", dest="date_to", metavar="YYYY-MM-DD",
+                    help="last date to list in coverage.csv (default: latest found)")
     args = ap.parse_args()
 
     if not args.pdfs and not args.all:
@@ -513,11 +586,18 @@ def main():
     start = time.time()
     done, failed, errors = 0, 0, []
     master_m, master_s = [], []                  # (sort_key, rows)
+    coverage = []                                # (date, status, file, detail)
 
     def handle(res, n):
         nonlocal done, failed
         pdf, report_date, order, markets, srows, warnings, err, info = res
         tag = f"[{n}/{len(pdfs)}] {Path(pdf).name}"
+        status, detail = classify(err, info)
+        fname_date = filename_date(pdf)
+        if report_date and fname_date and report_date != fname_date:
+            detail = (detail + "; " if detail else "") + \
+                f"file name says {fname_date} but the report says {report_date}"
+        coverage.append((report_date or fname_date, status, Path(pdf).name, detail))
         if err:
             failed += 1
             errors.append((pdf, err))
@@ -580,6 +660,29 @@ def main():
         write_rows(outdir / "conversion_errors.csv", ["file", "error"], errors)
         print(f"{failed} file(s) failed; listed in conversion_errors.csv", file=sys.stderr)
 
+    if coverage and not args.no_coverage:
+        log_path = outdir / "coverage_log.csv"
+        log = {}                                   # file name -> (date, status, detail)
+        if log_path.exists() and not args.reset_coverage:
+            with open(log_path, newline="", encoding="utf-8-sig") as f:
+                for row in csv.DictReader(f):
+                    log[row["file"]] = (row["date"], row["status"], row["detail"])
+        for d, status, fname, detail in coverage:  # newer results replace older ones
+            log[fname] = (d, status, detail)
+        unknown = [n for n in skipped_names if n not in log]
+        if unknown:
+            print(f"Coverage not updated: {len(unknown)} PDF(s) skipped by --skip-existing "
+                  "have no earlier coverage record. Run once without --skip-existing "
+                  "to build it.", file=sys.stderr)
+        else:
+            outdir.mkdir(parents=True, exist_ok=True)
+            write_rows(log_path, ["file", "date", "status", "detail"],
+                       [[n, *log[n]] for n in sorted(log)])
+            records = [(d, st, n, dt) for n, (d, st, dt) in log.items()]
+            counts = write_coverage(outdir / "coverage.csv", records,
+                                    args.date_from, args.date_to)
+            print("Coverage (" + str(outdir / "coverage.csv") + "): "
+                  + ", ".join(f"{v} {k}" for k, v in counts.items()), file=sys.stderr)
 
     print(f"\nDone: {done} converted, {failed} failed in {time.time() - start:.1f}s.",
           file=sys.stderr)
