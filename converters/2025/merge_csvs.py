@@ -33,6 +33,29 @@ MARKETS_HEADER = ["date", "market", "commodity", "unit", "price_low", "price_hig
                   "source_file"]
 SUMMARY_HEADER = ["date", "group", "commodity", "unit", "low", "high", "prevailing",
                   "average", "source_file"]
+# Same category rules as pdf_to_csv.py, used to fill in a blank `group` in summary
+# files made by an older version of the converter.
+GROUP_RULES = [
+    (r"\bCorn\b", "Corn"),
+    (r"^(Beef|Pork|Frozen|Whole Chicken|Chicken)", "Livestock And Poultry Products"),
+    (r"Milkfish|Bangus|Tilapia|Galunggong|Round Scad|Alumahan|Tamban|Sardines|Squid|Pusit",
+     "Fish"),
+    (r"Ampalaya|Bittergourd|Sitao|String Beans|Pechay Tagalog|Kalabasa|Squash|Talong|"
+     r"Eggplant|Kamatis|Tomato", "Lowland Vegetables"),
+    (r"Bell Pepper|Broccoli|Cabbage|Repolyo|Carrot|Baguio Beans|Habitchuelas|Potato|"
+     r"Pechay Baguio|Sayote|Chayote|Cauliflower|Celery|Lettuce", "Highland Vegetables"),
+    (r"Calamansi|Banana|Papaya|Mango|Avocado|Melon|Pomelo", "Fruits"),
+    (r"Sugar|Palm Oil|Coconut Oil", "Other Commodities"),
+    (r"Onion|Garlic|Ginger|Luya|Chil", "Spices"),
+]
+
+
+def category_for(name):
+    for pattern, group in GROUP_RULES:
+        if re.search(pattern, name, re.IGNORECASE):
+            return group
+    return ""
+
 
 GARBLED_FILE_SHARE = 0.25   # a file with this share of garbled rows is a scan: drop all of it
 OUTPUTS = {"markets": "merged_markets.csv", "summary": "merged_ncr_summary.csv"}
@@ -161,6 +184,8 @@ def read_file(path):
         row = row + [""] * (len(want) - len(row))
         source = row[len(want)] if len(row) > len(want) and row[len(want)] else src
         out = [iso(row[0]) or filename_date(source)] + row[1:len(want)] + [source]
+        if kind == "summary" and not out[1]:          # backfill a blank group
+            out[1] = category_for(out[2])
         rows.append(out)
     kept, dropped = drop_garbled(kind, rows)     # OCR garbage from scanned PDFs
     return kind, kept, dropped
