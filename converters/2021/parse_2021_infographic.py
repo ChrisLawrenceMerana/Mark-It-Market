@@ -142,3 +142,51 @@ def to_values(words):
     return vals
 
 
+def make_pairs(vals):
+    prices = [w for w in vals if w["val"] is not None]
+    if not prices:
+        return []
+    pw = statistics.median([w["x1"] - w["x0"] for w in prices])
+    vals = sorted(vals, key=lambda w: w["x0"])
+    used, pairs = set(), []
+    for i, a in enumerate(vals):
+        if i in used:
+            continue
+        best = None
+        for j, b in enumerate(vals):
+            if j == i or j in used:
+                continue
+            if abs(a["yc"] - b["yc"]) < 0.6 * max(a["h"], b["h"]) and 0 < b["x0"] - a["x1"] < 2.5 * pw:
+                if best is None or b["x0"] < vals[best]["x0"]:
+                    best = j
+        if best is not None:
+            used.update((i, best))
+            pairs.append((a, vals[best]))
+    return pairs
+
+
+def assign(pairs):
+    """Return (layout_name, [(group,name,unit,today,yesterday)...]) or (None, reason)."""
+    if len(pairs) != 51:
+        return None, f"found {len(pairs)} number pairs (expected 51)"
+    pairs = sorted(pairs, key=lambda p: p[0]["x0"])
+    cols, cur = [], [pairs[0]]
+    for p in pairs[1:]:
+        if p[0]["x0"] - cur[-1][0]["x0"] > 0.045 * RENDER_WIDTH:
+            cols.append(cur)
+            cur = [p]
+        else:
+            cur.append(p)
+    cols.append(cur)
+    sizes = [len(c) for c in cols]
+    for name, layout in LAYOUTS.items():
+        if sizes == [len(c) for c in layout]:
+            out = []
+            for col, items in zip(cols, layout):
+                col = sorted(col, key=lambda p: p[0]["yc"])
+                for p, (g, n, u) in zip(col, items):
+                    out.append((g, n, u, p[0]["val"], p[1]["val"]))
+            return name, out
+    return None, f"column sizes {sizes} match no known layout"
+
+
