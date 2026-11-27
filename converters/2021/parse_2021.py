@@ -130,3 +130,30 @@ def num(v):
     return "" if v is None or v == "NONE" else float(v.replace(",", ""))
 
 
+def parse_summary(text, notes):
+    group, out = None, []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.upper() in GROUPS:
+            group = GROUPS[line.upper()]
+            continue
+        if group is None:
+            continue
+        m = LINE_RE.match(line)
+        if not m:
+            continue
+        label = m.group("label").strip()
+        for rx, name, unit in ITEMS[group]:
+            if re.match(rx, label, re.I):
+                out.append({"group": group, "commodity": name, "unit": unit,
+                            "low": num(m.group("lo")), "high": num(m.group("hi")),
+                            "prevailing": num(m.group("pv")), "average": ""})
+                break
+        else:
+            if m.group("hi"):  # has numbers but no mapping -> tell the user
+                notes.append(f"unmapped row in {group}: '{label}'")
+    return out
+
+
+# ----------------------------------------------------------------------------------------
+# 2. PER-MARKET PAGE
