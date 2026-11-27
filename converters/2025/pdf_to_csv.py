@@ -10,6 +10,7 @@ Drag PDFs onto this file, or from a terminal:
     python pdf_to_csv.py a.pdf b.pdf
     python pdf_to_csv.py --all                  # every PDF in the current folder
     python pdf_to_csv.py input.pdf -o prices.csv   # single file only
+    python pdf_to_csv.py input.pdf --long       # one row per market+commodity
 
 Requires:  pip install pdfplumber
 """
@@ -247,6 +248,16 @@ def write_wide(path, report_date, order, markets):
             w.writerow(row)
 
 
+MARKET_LONG_HEADER = ["date", "market", "commodity", "unit", "price_low", "price_high"]
+
+
+def market_long_rows(report_date, order, markets):
+    for market, prices in markets.items():
+        for name, unit in order:
+            low, high = prices.get((name, unit), (None, None))
+            yield [report_date, market, name, unit, fmt(low), fmt(high)]
+
+
 SUMMARY_HEADER = ["date", "group", "commodity", "unit", "low", "high",
                   "prevailing", "average"]
 
@@ -349,6 +360,8 @@ def main():
                     help="with --all, also search subfolders")
     ap.add_argument("--no-summary", action="store_true",
                     help="skip the NCR-wide Low/High/Prevailing/Average data")
+    ap.add_argument("--long", action="store_true",
+                    help="per-file CSV in tidy format: one row per market + commodity")
     args = ap.parse_args()
 
     if not args.pdfs and not args.all:
@@ -394,7 +407,11 @@ def main():
             print(f"{tag}  ! {w}", file=sys.stderr)
         out = Path(args.output) if args.output else market_dir / (Path(pdf).stem + ".csv")
         out.parent.mkdir(parents=True, exist_ok=True)
-        write_wide(out, report_date, order, markets)
+        if args.long:
+            write_rows(out, MARKET_LONG_HEADER,
+                       market_long_rows(report_date, order, markets))
+        else:
+            write_wide(out, report_date, order, markets)
         if srows and not args.no_summary:
             summary_dir.mkdir(parents=True, exist_ok=True)
             sout = summary_dir / (Path(pdf).stem + "_ncr_summary.csv")
