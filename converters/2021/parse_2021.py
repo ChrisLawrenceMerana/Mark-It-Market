@@ -255,3 +255,25 @@ def parse_market_page(page, notes):
     return rows
 
 
+# ----------------------------------------------------------------------------------------
+def date_from_name(name):
+    m = FNAME_RE.search(name)
+    if not m or m.group(1).lower() not in MONTHS:
+        return None
+    return date(int(m.group(3)), MONTHS[m.group(1).lower()], int(m.group(2)))
+
+
+def write_csv(path, fields, rows, key_fields):
+    seen, final = set(), []
+    for r in sorted(rows, key=lambda r: tuple(str(r[k]) for k in key_fields)):
+        key = tuple(r[k] for k in key_fields)
+        if key not in seen:
+            seen.add(key)
+            final.append(r)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerows(final)
+    return len(final)
+
+
