@@ -1,3 +1,32 @@
+#!/usr/bin/env python3
+"""
+Convert DA "Bantay Presyo" price monitoring PDFs (2023 layout) into CSV files.
+
+Output (created in the current folder, or in --outdir):
+    Per Market/<name>.csv                 Low/High price per market and commodity
+    NCR Summary/<name>_ncr_summary.csv    NCR-wide Low/High (Prevailing and Average
+                                          are blank: 2023 PDFs do not print them)
+
+    file_log.csv                          one line per PDF: type, pages, rows skipped
+    needs_attention.csv                   rows or pages that were left out, and why
+    skip_summary.txt                      short summary of what was skipped
+    conversion_errors.csv                 PDFs that failed to convert
+
+Usage:
+    python pdf_to_csv_2023.py a.pdf b.pdf        # specific files
+    python pdf_to_csv_2023.py --all              # every PDF in the current folder
+    python pdf_to_csv_2023.py --all --combine    # also merge everything into
+                                                 # all_markets.csv / all_ncr_summary.csv
+    python pdf_to_csv_2023.py file.pdf --long    # one row per market + commodity
+
+Other options: -r (include subfolders), --also-individual (with --combine, keep the
+per-day CSVs too), --skip-existing, -j N (worker processes), --outdir DIR.
+
+Pages that are only pictures are ignored, so some days may have missing data.
+
+Requires:  pip install pdfplumber   (version 0.10 or newer)
+"""
+
 import argparse
 import csv
 import os
@@ -570,6 +599,7 @@ def pause():
 def find_pdfs(folder, recursive):
     it = folder.rglob("*") if recursive else folder.iterdir()
     return sorted(p for p in it if p.is_file() and p.suffix.lower() == ".pdf")
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
