@@ -178,3 +178,80 @@ def clean_word(t):
     return re.sub(r"[()*]", "", t).lower()
 
 
+def normalise_market(label):
+    label = re.sub(r"\s+", " ", label).strip()
+    return re.sub(r"\s*\(([^)]+)\)$", r"/\1", label)  # "X (Makati)" -> "X/Makati"
+
+
+def parse_market_page(page, notes):
+    words = page.extract_words()
+    if len(words) < 20:
+        notes.append("per-market page has no text layer")
+        return None
+    foot = [w["top"] for w in words if w["text"].lower().startswith("source")]
+    foot_top = min(foot) if foot else page.height
+    words = [w for w in words if w["top"] < foot_top]
+    for w in words:
+        w["xc"] = (w["x0"] + w["x1"]) / 2
+        w["yc"] = (w["top"] + w["bottom"]) / 2
+
+    data = [w for w in words if PRICE_RE.match(w["text"]) or w["text"] in ("N/A", "NOT")]
+    if not data:
+        notes.append("no price tokens found on the per-market page")
+        return None
+    # drop stray tiny text (hidden leftovers) that is much smaller than the real prices
+    med_h = statistics.median([w["bottom"] - w["top"] for w in data])
+    data = [w for w in data if (w["bottom"] - w["top"]) >= 0.6 * med_h]
+    first_data_top = min(w["top"] for w in data)
+    header = [w for w in words if w["top"] < first_data_top]
+
+    centres = []
+    for name, unit, keys in COLUMNS:
+        hits = [w["xc"] for w in header if any(k in clean_word(w["text"]) for k in keys)]
+        centres.append(statistics.mean(hits) if hits else None)
+    missing = [COLUMNS[i][0] for i, c in enumerate(centres) if c is None]
+    if missing:
+        notes.append(f"header columns not found: {missing}")
+        return None
+    spacing = statistics.median([b - a for a, b in zip(sorted(centres), sorted(centres)[1:])])
+    boundary = min(centres) - spacing / 2
+
+    header_bottom = max(w["bottom"] for w in header if any(
+        k in clean_word(w["text"]) for _, _, keys in COLUMNS for k in keys))
+    big = set(id(w) for w in data)
+    label_words = [w for w in words if id(w) not in big and w["xc"] < boundary
+                   and w["top"] > header_bottom - 1
+                   and (w["bottom"] - w["top"]) >= 0.5 * med_h]
+    if not label_words:
+        notes.append("no market labels found")
+        return None
+    tol = 0.5 * statistics.median([w["bottom"] - w["top"] for w in label_words])
+    rows = []
+    for w in sorted(label_words, key=lambda w: w["yc"]):
+        if rows and abs(w["yc"] - rows[-1]["yc"]) <= tol * 2:
+            rows[-1]["words"].append(w)
+            rows[-1]["yc"] = statistics.mean(x["yc"] for x in rows[-1]["words"])
+        else:
+            rows.append({"words": [w], "yc": w["yc"]})
+    for r in rows:
+        r["label"] = normalise_market(" ".join(
+            x["text"] for x in sorted(r["words"], key=lambda x: x["x0"])))
+        r["vals"] = {}
+
+    for w in data:
+        row = min(rows, key=lambda r: abs(r["yc"] - w["yc"]))
+        col = min(range(len(centres)), key=lambda i: abs(centres[i] - w["xc"]))
+        if abs(centres[col] - w["xc"]) > spacing * 0.6:
+            notes.append(f"price {w['text']} far from any column near '{row['label']}' - ignored")
+            continue
+        if col in row["vals"]:
+            notes.append(f"two values in one cell: {row['label']} / {COLUMNS[col][0]}")
+        row["vals"][col] = None if w["text"] in ("N/A", "NOT") else float(w["text"].replace(",", ""))
+
+    for r in rows:
+        got = len(r["vals"])
+        if 0 < got < len(COLUMNS):
+            notes.append(f"{r['label']}: only {got}/{len(COLUMNS)} cells found")
+    return rows
+
+
