@@ -106,3 +106,39 @@ def text_words(page):
             for w in page.extract_words()]
 
 
+def ocr_variants(page):
+    """Yield word lists from several OCR settings, best-first."""
+    from PIL import ImageOps
+    pt = find_tesseract()
+    for width in (RENDER_WIDTH, 4200):
+        im = page.to_image(resolution=72 * width / float(page.width)).original.convert("RGB")
+        scale = RENDER_WIDTH / width
+        gray = ImageOps.grayscale(im)
+        for img, cfg in ((im, "--psm 11"), (gray, "--psm 11"), (gray, "--psm 12"),
+                         (gray.point(lambda p: 255 if p > 120 else 0), "--psm 11")):
+            d = pt.image_to_data(img, config=cfg, output_type=pt.Output.DICT)
+            words = []
+            for i, t in enumerate(d["text"]):
+                t = t.strip()
+                if t and float(d["conf"][i]) >= 0:
+                    words.append(dict(text=t, x0=d["left"][i] * scale, x1=(d["left"][i] + d["width"][i]) * scale,
+                                      top=d["top"][i] * scale, bottom=(d["top"][i] + d["height"][i]) * scale))
+            yield words
+
+
+# ---- pairing ----------------------------------------------------------------------------------
+def to_values(words):
+    vals = []
+    for w in words:
+        t = w["text"]
+        if PRICE.match(t):
+            v = float(t.replace(",", ""))
+        elif NAWORD.match(t) or t.upper() == "NOT":
+            v = None
+        else:
+            continue
+        w = dict(w, val=v, yc=(w["top"] + w["bottom"]) / 2, h=w["bottom"] - w["top"])
+        vals.append(w)
+    return vals
+
+
