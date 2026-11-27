@@ -44,6 +44,17 @@ SUMMARY_DIR = "NCR Summary"
 
 
 # ----------------------------------------------------------------- parsing
+def plausible_market(name):
+    """Garbled OCR text produces 'market names' with digits and punctuation."""
+    return (3 <= len(name) <= 60 and not re.search(r"\d", name)
+            and "NOT AVAIL" not in name.upper())
+
+
+def plausible_commodity(name):
+    return (2 <= len(name) <= 50 and not re.search(r"\d+\.\d{2}", name)
+            and "NOT AVAIL" not in name.upper())
+
+
 def clean(s):
     return re.sub(r"\s+", " ", s or "").strip()
 
@@ -126,6 +137,9 @@ def parse_market_page(page, text, warn):
                  f"values, found {len(cells)}")
             continue
         market = clean(m.group("market"))
+        if not plausible_market(market):
+            warn(f"ignored an unreadable row: '{market[:50]}'")
+            continue
         rows.append((market, cells))
     return commodities, rows
 
@@ -167,7 +181,7 @@ def clean_name(name):
 
 def parse_summary_page(page, warn=lambda msg: None):
     """NCR-wide Low/High/Prevailing/Average rows (two columns per page)."""
-    rows = []
+    rows, rejected = [], 0
     w, h = page.width, page.height
     for box in ((0, 0, w / 2, h), (w / 2, 0, w, h)):
         group = ""
@@ -193,10 +207,15 @@ def parse_summary_page(page, warn=lambda msg: None):
             name = clean_name(m.group("name"))
             if name.upper().startswith("COMMODITIES"):
                 continue
+            if not plausible_commodity(name):
+                rejected += 1
+                continue
             unit = "PHP/piece" if re.search(r"\bEgg\b", name) else "PHP/kg"
             if re.search(r"\b(350ml|1L)\b", name):
                 unit = "PHP/bottle"
             rows.append([group or category_for(name), name, unit, low, high, prev, avg])
+    if rejected:
+        warn(f"{rejected} unreadable summary line(s) ignored")
     return rows
 
 
