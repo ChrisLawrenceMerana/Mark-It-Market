@@ -277,3 +277,106 @@ def write_csv(path, fields, rows, key_fields):
     return len(final)
 
 
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("folder", nargs="?", default=".")
+    ap.add_argument("--extra", nargs="*", default=[], help="extra per-market CSVs to merge in")
+    args = ap.parse_args()
+
+    by_date = {}
+    for p in sorted(Path(args.folder).glob("*.pdf")):
+        d = date_from_name(p.name)
+        if d is None:
+            print(f"skip (no date in filename): {p.name}")
+            continue
+        if d not in by_date or "revised" in p.name.lower():  # prefer the "-revised" file
+            by_date[d] = p
+
+    summary_rows, market_rows = [], []
+    cat = {"needs_ocr": [], "infographic": [], "problems": [], "warnings": []}
+    n_sum = n_mkt = n_sumonly = 0
+
+    for d, p in sorted(by_date.items()):
+        notes_s, notes_m = [], []
+        try:
+            with pdfplumber.open(p) as pdf:
+                pages = pdf.pages
+                texts = [pg.extract_text() or "" for pg in pages]
+
+                # ---- NCR summary (tabled format)
+                tabled = next((i for i, t in enumerate(texts)
+                               if re.search(r"High\s+Low\s+Prevailing", t)), None)
+                got_summary = False
+                if tabled is not None:
+                    rows = parse_summary(texts[tabled], notes_s)
+                    if rows:
+                        got_summary = True
+                        n_sum += 1
+                        for r in rows:
+                            summary_rows.append({"date": d.isoformat(), **r, "source_file": p.stem + ".csv"})
+                    else:
+                        cat["problems"].append(f"{p.name}: summary table found but no rows read")
+                else:
+                    cat["infographic"].append(p.name)
+
+                # ---- per-market page
+                idx = next((i for i, t in enumerate(texts)
+                            if re.search(r"per\s+market", t, re.I)), None)
+                if idx is None:
+                    if got_summary:
+                        n_sumonly += 1
+                    else:
+                        blank = [i + 1 for i, pg in enumerate(pages) if len(pg.extract_words()) < 20]
+                        if blank:
+                            cat["needs_ocr"].append(f"{p.name}: per-market table is an image (page {blank})")
+                        else:
+                            cat["problems"].append(f"{p.name}: no per-market page found")
+                else:
+                    rows = parse_market_page(pages[idx], notes_m)
+                    if rows is None:
+                        cat["problems"].append(f"{p.name}: per-market page not parsed - " + "; ".join(notes_m))
+                    else:
+                        n_mkt += 1
+                        for r in rows:
+                            for i, (name, unit, _) in enumerate(COLUMNS):
+                                v = r["vals"].get(i)
+                                market_rows.append({
+                                    "date": d.isoformat(), "market": r["label"], "commodity": name,
+                                    "unit": unit, "price_low": "" if v is None else v,
+                                    "price_high": "" if v is None else v, "source_file": p.stem + ".csv"})
+        except Exception as e:  # noqa: BLE001
+            cat["problems"].append(f"{p.name}: could not read PDF ({e})")
+            print(f"[x] {p.name}")
+            continue
+        warn = notes_s + notes_m
+        if warn:
+            cat["warnings"].append(f"{p.name}: " + "; ".join(warn))
+        print(f"[ok] {p.name}")
+
+    for path in args.extra:
+        with open(path, newline="", encoding="utf-8") as f:
+            market_rows.extend(csv.DictReader(f))
+
+    ns = write_csv("ncr_summary_2021.csv", SUMMARY_FIELDS, summary_rows, ["date", "group", "commodity"])
+    nm = write_csv("markets_2021.csv", MARKET_FIELDS, market_rows, ["date", "market", "commodity"])
+
+    lines = [
+        f"NCR summary parsed from {n_sum} files ({ns} rows) -> ncr_summary_2021.csv",
+        f"Per-market parsed from {n_mkt} files (+ any --extra) ({nm} rows) -> markets_2021.csv",
+        f"{n_sumonly} files are summary-only (no per-market table exists in them: expected for early 2021)",
+        "",
+        f"== NEEDS OCR / MANUAL ENTRY ({len(cat['needs_ocr'])}): per-market table is a picture ==",
+        *cat["needs_ocr"], "",
+        f"== SUMMARY IS AN INFOGRAPHIC, NOT PARSED ({len(cat['infographic'])}): only today's prevailing price, no low/high ==",
+        *cat["infographic"], "",
+        f"== PROBLEMS ({len(cat['problems'])}) ==", *cat["problems"], "",
+        f"== WARNINGS ({len(cat['warnings'])}) ==", *cat["warnings"],
+    ]
+    Path("parse_report.txt").write_text("\n".join(lines), encoding="utf-8")
+    print("\n" + "\n".join(lines[:3]))
+    print(f"Needs OCR: {len(cat['needs_ocr'])} | Infographic summary: {len(cat['infographic'])} | "
+          f"Problems: {len(cat['problems'])} | Warnings: {len(cat['warnings'])}  (see parse_report.txt)")
+
+
+if __name__ == "__main__":
+    sys.exit(main())
