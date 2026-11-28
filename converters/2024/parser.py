@@ -19,13 +19,16 @@ import math
 import re
 import statistics
 import sys
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 import pdfplumber
 
+# --------------------------------------------------------------------------
 # Settings
+# --------------------------------------------------------------------------
 
 EXPECTED_MARKETS: int | None = None
 MIN_READABLE_CHARS = 15
@@ -135,7 +138,33 @@ SUMMARY_ITEMS_2024 = [
     ("Spices", "Chili (Siling Labuyo)", "PHP/kg", r"Chil[il]\s*Siling\s*labuy\w+"),
 ]
 
-GAP_TOLERANCES = (0, 0.5, 1, 1.5, 2, 3, 4, 6, 8, 10)
+# Header text (letters only, lower-case) must contain ALL of these substrings.
+# Columns are matched by header text, not position, because the grid has had
+# 14 columns (no pork/chicken) and 19 columns, and the cabbage order differs.
+HEADER_MATCH = {
+    "Well-milled Rice (Local)": ("rice",),
+    "Corn (White)": ("corn", "white"),
+    "Corn (Yellow)": ("corn", "yellow"),
+    "Tilapia": ("tilapia",),
+    "Galunggong": ("galungg",),
+    "Egg (Medium)": ("egg",),
+    "Ampalaya": ("ampalaya",),
+    "Tomato": ("tomato",),
+    "Cabbage (Rareball)": ("rare",),
+    "Cabbage (Scorpio)": ("scorp",),
+    "Cabbage (Wonderball)": ("wonder",),
+    "Pechay Baguio": ("pech",),
+    "Red Onion (Local)": ("onion",),
+    "Sugar (Washed)": ("sugar",),
+    "Fresh Pork Kasim/Pigue": ("fresh", "kasim"),
+    "Frozen Pork Kasim/Pigue": ("frozen", "kasim"),
+    "Fresh Pork Liempo": ("fresh", "liempo"),
+    "Frozen Pork Liempo": ("frozen", "liempo"),
+    "Fresh Whole Chicken": ("chicken",),
+}
+
+PRICE_RANGE_RE = re.compile(r"\d[\d,]*\.\d{2}\s*-\s*\d[\d,]*\.\d{2}")
+MIN_GRID_RANGES = 100  # the per-market grid has 200+ price ranges; the page-1 infographic ~70
 PRICE_FLOOR, PRICE_CEILING = 0, 10_000
 
 DATE_RE = re.compile(
@@ -144,9 +173,12 @@ DATE_RE = re.compile(
 )
 DAY_MONTH_DATE_RE = re.compile(r"\b(\d{1,2})\s+([A-Za-z]+),?\s+(\d{4})\b")
 FILENAME_DATE_RE = re.compile(r"([A-Za-z]+)-(\d{1,2})-(\d{4})", re.IGNORECASE)
-NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d{1,2})?")  # prices have <= 2 decimals; stops glued "140.00120.00" splitting wrongly
+# Tokens used to split words that PDF extraction glued across two cells, e.g.
+# "AVAILABLENOT", "AVAILABLE130.00-150.00", "-140.00120.00".
 RANGE_OR_STATUS_RE = re.compile(
-    r"(?:NOT\s+AVAIL(?:ABLE)?|TAVAIL\w*|\d[\d,]*(?:\.\d+)?\s*(?:-\s*\d[\d,]*(?:\.\d+)?)?)",
+    r"(?:NOT\s*AVAIL(?:ABLE)?|AVAILABLE|NOT|TAVAIL\w*"
+    r"|(?:-\s*)?\d[\d,]*\.\d{2}(?:\s*-\s*\d[\d,]*\.\d{2})?)",
     re.IGNORECASE,
 )
 
@@ -158,7 +190,14 @@ class ParseError(Exception):
 class SkippedImagePDFError(ParseError):
     """Raised when a PDF has no readable/selectable text and appears to be an image."""
 
+
+class NoMarketGridError(ParseError):
+    """Raised when a PDF has no per-market grid (e.g. summary-only Saturday reports)."""
+
+
+# --------------------------------------------------------------------------
 # Small helpers
+# --------------------------------------------------------------------------
 
 def _xc(w) -> float:
     return (w["x0"] + w["x1"]) / 2
@@ -189,13 +228,30 @@ def is_image_only_pdf(
     return total_non_ws_chars < min_chars
 
 
+def _best_grid_page(pdf):
+    """
+    Return the page holding the per-market grid, or None.
+
+    A page is a candidate if it says 'PER MARKET' or has a lot of price ranges.
+    The page-1 infographic can also name Balintawak and Quinta (it lists the
+    covered markets), so market names alone must not select a page.
+    """
+    best, best_key = None, None
+    for page in pdf.pages:
+        txt = re.sub(r"\s+", " ", (page.extract_text() or "")).upper()
+        n_ranges = len(PRICE_RANGE_RE.findall(txt))
+        has_title = "PER MARKET" in txt
+        if not has_title and n_ranges < MIN_GRID_RANGES:
+            continue
+        key = (has_title, n_ranges)
+        if best_key is None or key > best_key:
+            best, best_key = page, key
+    return best
+
+
 def has_market_grid(pdf) -> bool:
     """Return True if the PDF appears to contain a per-market price grid."""
-    for page in pdf.pages:
-        up = re.sub(r"\s+", " ", (page.extract_text() or "")).upper()
-        if "PER MARKET" in up or ("BALINTAWAK" in up and "QUINTA" in up):
-            return True
-    return False
+    return _best_grid_page(pdf) is not None
 
 
 def _empty_market_df() -> pd.DataFrame:
@@ -214,13 +270,13 @@ def _empty_summary_df() -> pd.DataFrame:
     return df
 
 
-def _split_merged_words(words):
+def _split_merged_words(words, min_x: float = 115):
     """Split wide spans containing multiple price ranges or status tokens."""
     expanded = []
     for w in words:
         txt = w["text"].strip()
         matches = list(RANGE_OR_STATUS_RE.finditer(txt))
-        if len(matches) <= 1 or w["x0"] < 115:
+        if len(matches) <= 1 or w["x0"] < min_x:
             expanded.append(w)
             continue
 
@@ -261,6 +317,9 @@ def _empty_market_fallback(report_date) -> pd.DataFrame:
     return df
 
 
+_NA_LETTERS = Counter("NOTAVAILABLE")
+
+
 def parse_cell(text: str):
     """Return (price_min, price_max, status); status is ok / na / blank / bad."""
     t = text.strip()
@@ -269,9 +328,15 @@ def parse_cell(text: str):
     upper = t.upper()
     if "AVAIL" in upper or "TAVAIL" in upper:
         return None, None, "na"
+    # Overlapping text can scramble or cut "NOT AVAILABLE" ('NOT', 'AVA N I O LA T B LE')
+    letters = re.sub(r"[^A-Z]", "", upper)
+    if len(letters) >= 3 and not re.search(r"\d", t) and not (Counter(letters) - _NA_LETTERS):
+        return None, None, "na"
     nums = [float(n.replace(",", "")) for n in NUMBER_RE.findall(t)]
     if not nums:
         return None, None, "bad"
+    if max(nums) == 0:
+        return None, None, "na"
     return min(nums), max(nums), "ok"
 
 
@@ -284,17 +349,16 @@ def split_market(raw: str):
     return raw, None
 
 
+# --------------------------------------------------------------------------
 # Locating things on the page
+# --------------------------------------------------------------------------
 
 def find_grid_page(pdf):
-    """Find the per-market grid page ('PER MARKET' or page 2 if present)."""
-    for page in pdf.pages:
-        txt = re.sub(r"\s+", " ", (page.extract_text() or "")).upper()
-        if "PER MARKET" in txt or ("BALINTAWAK" in txt and "QUINTA" in txt):
-            return page
-    if len(pdf.pages) >= 2:
-        return pdf.pages[1]
-    raise ParseError("Could not find the per-market grid page.")
+    """Find the per-market grid page (see _best_grid_page)."""
+    page = _best_grid_page(pdf)
+    if page is None:
+        raise ParseError("Could not find the per-market grid page.")
+    return page
 
 
 def find_summary_page(pdf):
@@ -394,41 +458,60 @@ def find_table_bounds(page, words):
     return header_top, min(body_tops) - 0.5, table_bottom
 
 
-def _anchor_bands(words, expected: int):
-    """Fallback vertical bands anchored around known column x-centers if gap clustering differs."""
-    default_centers = [
-        75.0, 136.0, 171.0, 206.0, 242.0, 277.0, 310.0, 345.0, 381.0, 415.0,
-        449.0, 483.0, 520.0, 558.0, 598.0, 636.0, 675.0, 715.0, 755.0, 795.0,
-    ][:expected]
-    bands = []
-    for idx, cx in enumerate(default_centers):
-        half_w = 24.0 if idx == 0 else 15.0
-        bands.append([cx - half_w, cx + half_w])
-    return bands
+def find_header_cells(page, header_top, header_bottom):
+    """
+    Return the header boxes as (x0, x1, top, bottom), left to right: MARKET
+    first, then one per commodity. Their edges are the real column edges, so
+    this works for any number of commodity columns and any page size.
+    """
+    raw = [
+        (r["x0"], r["x1"], r["top"], r["bottom"])
+        for r in page.rects
+        if r["x1"] - r["x0"] > 15
+        and 8 < r["height"] < 60
+        and r["top"] >= header_top - 3
+        and r["bottom"] <= header_bottom + 3
+    ]
+    cells = []
+    for c in sorted(raw):
+        if cells and abs(c[0] - cells[-1][0]) < 1.0 and abs(c[1] - cells[-1][1]) < 1.0:
+            continue  # duplicate box
+        cells.append(c)
+    if len(cells) < 3:
+        return []
+    for a, b in zip(cells, cells[1:]):
+        if abs(b[0] - a[1]) > 2.0:  # boxes must touch; otherwise it is not the header row
+            return []
+    return cells
 
 
-def cluster_columns(words, expected, strict: bool = True):
-    spans = sorted((w["x0"], w["x1"]) for w in words)
-    seen = {}
-    for tol in GAP_TOLERANCES:
-        clusters = []
-        for x0, x1 in spans:
-            if clusters and x0 <= clusters[-1][1] + tol:
-                clusters[-1][1] = max(clusters[-1][1], x1)
-            else:
-                clusters.append([x0, x1])
-        seen[tol] = len(clusters)
-        if len(clusters) == expected:
-            return clusters
+def read_header_labels(page, cells):
+    """Letters-only, lower-case header text for each header box."""
+    labels = []
+    for x0, x1, top, bottom in cells:
+        box = (
+            max(x0 + 0.5, 0), max(top, 0),
+            min(x1 - 0.5, page.width), min(bottom, page.height),
+        )
+        text = page.crop(box).extract_text() or ""
+        labels.append(re.sub(r"[^a-z]", "", text.lower()))
+    return labels
 
-    if not strict:
-        return _anchor_bands(words, expected)
 
-    raise ParseError(
-        f"Expected {expected} columns (market name + {expected - 1} commodities) "
-        f"but found these counts for each gap tolerance tried: {seen}. "
-        "Run `python parser.py file.pdf` to inspect."
-    )
+def match_header(label: str):
+    """Return (commodity, unit) for a header label, or None."""
+    for commodity, unit, _keys, _group in COMMODITIES:
+        if all(k in label for k in HEADER_MATCH[commodity]):
+            return commodity, unit
+    if label == "cabbage":
+        return "Cabbage (Rareball)", "PHP/kg"
+    # Overlapping header lines can interleave letters ('wcohirtne' for 'cornwhite'):
+    # accept an exact letter-for-letter match of the full commodity name.
+    key = sorted(label)
+    for commodity, unit, _keys, _group in COMMODITIES:
+        if sorted(re.sub(r"[^a-z]", "", commodity.lower())) == key:
+            return commodity, unit
+    return None
 
 
 def group_lines(words):
@@ -445,7 +528,9 @@ def group_lines(words):
     return lines
 
 
+# --------------------------------------------------------------------------
 # 1. Per-market grid entry point
+# --------------------------------------------------------------------------
 
 def parse_market_page(
     pdf_path,
@@ -454,7 +539,6 @@ def parse_market_page(
     raise_on_skip: bool = False,
 ) -> pd.DataFrame:
     pdf_path = Path(pdf_path)
-    n_cols = 1 + len(COMMODITIES)
 
     with pdfplumber.open(pdf_path) as pdf:
         if skip_images and is_image_only_pdf(pdf):
@@ -468,7 +552,7 @@ def parse_market_page(
                 first_page = pdf.pages[0] if pdf.pages else None
                 report_date = read_date(pdf, first_page, pdf_path=pdf_path) if first_page else None
                 return _empty_market_fallback(report_date)
-            raise ParseError(
+            raise NoMarketGridError(
                 f"'{pdf_path.name}' has no per-market grid page (likely a summary-only PDF)."
             )
 
@@ -483,42 +567,61 @@ def parse_market_page(
             return _empty_market_df()
 
         report_date = read_date(pdf, page, pdf_path=pdf_path)
-        words = _split_merged_words(page.extract_words())
+        raw_words = page.extract_words()
+        header_top, header_bottom, table_bottom = find_table_bounds(page, raw_words)
+        cells = find_header_cells(page, header_top, header_bottom)
+        labels = read_header_labels(page, cells) if cells else []
+        words = _split_merged_words(raw_words, min_x=cells[0][1] if cells else 115)
+        if cells:
+            # The row stripes are wide boxes ending just above the footer; they stay
+            # reliable even when the "Source" line is garbled by overlapping text.
+            table_w = cells[-1][1] - cells[0][0]
+            head_bottom = max(c[3] for c in cells)
+            stripe_bottoms = [
+                r["bottom"] for r in page.rects
+                if r["top"] >= head_bottom - 1 and r["x1"] - r["x0"] >= 0.5 * table_w
+            ]
+            if stripe_bottoms:
+                table_bottom = min(table_bottom, max(stripe_bottoms))
 
-    header_top, header_bottom, table_bottom = find_table_bounds(page, words)
-    region = [
-        w for w in words
-        if w["top"] >= header_top - 0.5 and w["bottom"] <= table_bottom + 0.5
-    ]
-
-    if not region:
+    if not cells:
         if strict:
-            raise ParseError("Could not locate any price cells below the header.")
+            raise ParseError(
+                f"'{pdf_path.name}': could not find the shaded header boxes that mark the table columns."
+            )
         return _empty_market_fallback(report_date)
 
-    bands = cluster_columns(region, n_cols, strict=strict)
-    edges = [(bands[i][1] + bands[i + 1][0]) / 2 for i in range(len(bands) - 1)]
+    col_map, problems = {}, []
+    for i, label in enumerate(labels[1:], start=1):
+        found = match_header(label)
+        if found is None:
+            problems.append(f"column {i}: unrecognised header {label!r}")
+        elif found in col_map.values():
+            problems.append(f"column {i}: duplicate header for {found[0]}")
+        else:
+            col_map[i] = found
+    if (problems or not col_map) and strict:
+        raise ParseError(
+            f"'{pdf_path.name}': header problems:\n  - " + "\n  - ".join(problems or ["no commodity columns"])
+        )
+    if not col_map:
+        return _empty_market_fallback(report_date)
+    problems = []  # non-strict: unknown columns are skipped
+
+    x_min, x_max = cells[0][0] - 2, cells[-1][1] + 2
+    top_limit = min(c[2] for c in cells) - 0.5
+    body_top = max(c[3] for c in cells) - 0.5
+    region = [
+        w for w in words
+        if w["top"] >= top_limit and w["bottom"] <= table_bottom + 0.5
+        and x_min <= _xc(w) <= x_max
+    ]
+    edges = [(cells[i][1] + cells[i + 1][0]) / 2 for i in range(len(cells) - 1)]
 
     def col_of(w):
         return bisect.bisect(edges, _xc(w))
 
-    header_words = [w for w in region if w["bottom"] <= header_bottom + 0.5]
-    for i, (name, _unit, keys, _group) in enumerate(COMMODITIES, start=1):
-        parts = sorted(
-            (w for w in header_words if col_of(w) == i),
-            key=lambda w: (round(w["top"]), w["x0"]),
-        )
-        text = "".join(w["text"] for w in parts).lower()
-
-        if keys and not any(k in text for k in keys):
-            msg = (
-                f"Column {i} should be '{name}' but its header reads {text!r} "
-                f"(expected one of {keys})."
-            )
-            if strict:
-                raise ParseError(msg)
-
-    body = [w for w in region if w["top"] >= header_bottom - 0.5]
+    body = [w for w in region if w["top"] >= body_top]
     name_lines = group_lines([w for w in body if col_of(w) == 0])
     if not body or len(name_lines) < 2:
         if strict:
@@ -529,16 +632,16 @@ def parse_market_page(
     pitch = statistics.median(b - a for a, b in zip(centers, centers[1:]))
     max_dist = 0.6 * pitch
 
-    cells = {}
+    cells_by_pos = {}
     for w in body:
         r = min(range(len(centers)), key=lambda i: abs(centers[i] - _yc(w)))
         if abs(centers[r] - _yc(w)) > max_dist:
             continue
-        cells.setdefault((r, col_of(w)), []).append(w)
+        cells_by_pos.setdefault((r, col_of(w)), []).append(w)
 
     def cell_text(r, c):
         return " ".join(
-            w["text"] for w in sorted(cells.get((r, c), []), key=lambda w: w["x0"])
+            w["text"] for w in sorted(cells_by_pos.get((r, c), []), key=lambda w: w["x0"])
         )
 
     records, problems = [], []
@@ -546,7 +649,10 @@ def parse_market_page(
         market, city = split_market(cell_text(r, 0))
         if not market:
             continue
-        for c, (commodity, unit, _keys, _group) in enumerate(COMMODITIES, start=1):
+        statuses = [parse_cell(cell_text(r, c))[2] for c in col_map]
+        if sum(s in ("ok", "na") for s in statuses) < max(1, len(statuses) // 2):
+            continue  # stray text (footer, page mark), not a market row
+        for c, (commodity, unit) in col_map.items():
             lo, hi, status = parse_cell(cell_text(r, c))
             if status in ("blank", "bad"):
                 problems.append(
@@ -576,7 +682,9 @@ def parse_market_page(
     return df
 
 
+# --------------------------------------------------------------------------
 # 2. Daily NCR summary entry point (keeps NaN + provenance columns)
+# --------------------------------------------------------------------------
 
 def _compute_market_stats(
     market_df: pd.DataFrame | None,
@@ -690,6 +798,9 @@ def validate(df: pd.DataFrame):
     n = df["market"].nunique()
     if EXPECTED_MARKETS is not None and n != EXPECTED_MARKETS:
         problems.append(f"expected {EXPECTED_MARKETS} markets, found {n}")
+    junk = [m for m in df["market"].dropna().unique() if re.search(r"\d", m) or len(m) > 60]
+    if junk:
+        problems.append(f"{len(junk)} market names look like page text, e.g. {junk[0]!r}")
     avail = df[df["available"]]
     bad = avail[avail["price_min"] > avail["price_max"]]
     if len(bad):
@@ -698,13 +809,17 @@ def validate(df: pd.DataFrame):
         (avail["price_min"] <= PRICE_FLOOR) | (avail["price_max"] > PRICE_CEILING)
     ]
     if len(out):
-        problems.append(f"{len(out)} prices outside {PRICE_FLOOR}-{PRICE_CEILING}")
-    if df.groupby("market")["available"].sum().eq(0).any():
-        problems.append("at least one market has no available prices at all")
+        ex = "; ".join(
+            f"{r.market} / {r.commodity} = {r.price_min:g}-{r.price_max:g}"
+            for r in out.head(3).itertuples()
+        )
+        problems.append(f"{len(out)} prices outside {PRICE_FLOOR}-{PRICE_CEILING}: {ex}")
     return problems
 
 
+# --------------------------------------------------------------------------
 # Command-line inspection: python parser.py file.pdf
+# --------------------------------------------------------------------------
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
